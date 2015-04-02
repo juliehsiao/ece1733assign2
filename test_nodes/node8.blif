@@ -1,0 +1,10 @@
+.model top
+.inputs x1 x2 x3 x4
+.outputs f
+
+.names x1 x2 x3 x4 f
+0001 -
+0010 -
+100- -
+
+.end

@@ -1,0 +1,20 @@
+1) convert blif flies to unix format (\r\n -> \n)
+in vim:
+:set ff=unix
+from command line: 
+$ dos2unix <filename>
+
+2) rerun flex and bison:
+$ flex -Pblif_yy -i -oblif_parser.c blif_parser.l
+$ bison -p blif_yy -v -d blif_parser.y
+
+3) comment out windows-only #includes (compiler will complain about them)
+		-> grep for them because they show up all over the place
+
+4) compile as 32-bit program using -m32 flag for gcc (see makefile)
+
+May need to install gcc-multilib on ubuntu
+$ sudo apt-get install gcc-multilib
+
+sudo apt-get install g++-multilib
+sudo apt-get install gcc-4.6-multilib
