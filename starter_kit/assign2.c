@@ -31,13 +31,17 @@ typedef struct _TRow {
     int high;
 } TRow;
 
-typedef struct _HRow {
-} HRow;
-
 /**********************************************************************/
 /*** DEFINE STATEMENTS ************************************************/
 /**********************************************************************/
 #define INIT_SIZE 1024
+#define AND  0x100
+#define OR   0x101
+#define XOR  0x102
+#define NAND 0x103
+#define NOR  0x104
+#define XNOR 0x105
+
 /**********************************************************************/
 /*** GLOBAL VARIABLES *************************************************/
 /**********************************************************************/
@@ -48,28 +52,113 @@ int numTRows = 0;
 int **G;
 int GThreshold = INIT_SIZE;
 
-/**********************************************************************/
-/*** FUNCTION DECLARATIONS ********************************************/
-/**********************************************************************/
-
-
-
-
-/**********************************************************************/
-/*** BODY *************************************************************/
-/**********************************************************************/
 
 
 /**********************************************************************/
 /*** Functions for printing BDD graph *********************************/
 /**********************************************************************/
-void printDOT(t_blif_cubical_function *f, t_blif_signal **inputs, int index, bool isAllX)
+void printSubGraph(t_blif_cubical_function *f, t_blif_signal **inputs, FILE *fp,
+        int u, bool *printed)
+{
+    int nameIdx = f->inputs[T[u].var]->data.index;
+    //set the name of this node
+    printf("\t%d [label=\"%s\"];\n", u, inputs[nameIdx]->data.name);
+    fprintf(fp, "\t%d [label=\"%s\"];\n", u, inputs[nameIdx]->data.name);
+
+    //--------------------------
+    // print low subgraph
+    //--------------------------
+    //print 0-path if it points to terminal node
+    if( (T[u].low == 0)||(T[u].low == 1) ) 
+    {
+        printf("\t%d -> %d [label=\" 0\"];\n", u, T[u].low);
+        fprintf(fp, "\t%d -> %d [label=\" 0\"];\n", u, T[u].low);
+    }
+    else
+    {
+        // print the subgraph if it hasn't been printed
+        if(false == printed[T[u].low])
+            printSubGraph(f, inputs, fp, T[u].low, printed);
+
+        // print the 0-path of this node
+        printf("\t%d -> %d [label=\" 0\"];\n", u, T[u].low);
+        fprintf(fp, "\t%d -> %d [label=\" 0\"];\n", u, T[u].low);
+    }
+
+    //--------------------------
+    // print high subgraph
+    //--------------------------
+    //print 1-path if it points to terminal node
+    if( (T[u].high == 0)||(T[u].high == 1) )
+    {
+        printf("\t%d -> %d [label=\" 1\" fontcolor=blue] [color=blue];\n", 
+                u, T[u].high);
+        fprintf(fp, "\t%d -> %d [label=\" 1\" fontcolor=blue] [color=blue];\n", 
+                u, T[u].high);
+    }
+    else
+    {
+        // print the subgraph if it hasn't been printed
+        if(false == printed[T[u].high])
+            printSubGraph(f, inputs, fp, T[u].high, printed);
+
+        // print the 1-path of this node
+        printf("\t%d -> %d [label=\" 1\" fontcolor=blue] [color=blue];\n", 
+                u, T[u].high);
+        fprintf(fp, "\t%d -> %d [label=\" 1\" fontcolor=blue] [color=blue];\n", 
+                u, T[u].high);
+    }
+
+    //set node as printed
+    printed[u] = true;
+}
+
+void printDOTfromNode(t_blif_cubical_function *f, t_blif_signal **inputs, 
+        int BDDnum, int rootNode)
 {
     printf("there are %d inputs and %d nodes in total\n", numInputs, numTRows);
 
     FILE *fp;
     char fileName[50]; // should be more than enough
-    sprintf(fileName, "BDD%d.dot", index);
+    sprintf(fileName, "BDD%d.dot", BDDnum);
+    fp = fopen(fileName, "w+");
+
+    //temp bool to keep track of whether a node has been printed or not
+    bool *printed = (bool*) malloc (numTRows * sizeof(bool));
+    memset(printed, false, numTRows * sizeof(bool));
+
+    printf("digraph BDD {\n");
+    fprintf(fp, "digraph BDD {\n");
+    
+    if(rootNode != 0)
+    {
+        printf("\t1 [shape=box];\n");
+        fprintf(fp, "\t1 [shape=box];\n");
+    }
+    if(rootNode != 1)
+    {
+        printf("\t0 [shape=box];\n");
+        fprintf(fp, "\t0 [shape=box];\n");
+    }
+    
+    printSubGraph(f, inputs, fp, rootNode, printed);
+
+    // free temp bool
+    free(printed);
+
+    printf("}\n");
+    fprintf(fp, "}\n");
+    fclose(fp);
+}
+
+
+void printDOT(t_blif_cubical_function *f, t_blif_signal **inputs, int BDDnum, bool isAllX)
+{
+    printf("there are %d inputs and %d nodes in total\n", numInputs, numTRows);
+
+    FILE *fp;
+    char fileName[50]; // should be more than enough
+    sprintf(fileName, "BDD%d.dot", BDDnum);
     fp = fopen(fileName, "w+");
 
     printf("digraph G {\n");
@@ -95,10 +184,6 @@ void printDOT(t_blif_cubical_function *f, t_blif_signal **inputs, int index, boo
             printf("input name = %s\n", inputs[idx]->data.name);
             printf("\t%d [label=\"%s\"];\n", i, inputs[idx]->data.name);
             fprintf(fp, "\t%d [label=\"%s\"];\n", i, inputs[idx]->data.name);
-
-            //hack since blif reader doesn't store name string
-            //printf("\t%d [label=\"x%d\"];\n", i, T[i].var+1); 
-            //fprintf(fp, "\t%d [label=\"x%d\"];\n", i, T[i].var+1);
         }
         for(i=2; i<numTRows; i++)
         {
@@ -188,6 +273,23 @@ int add(int i, int l, int h)
     T[idx].low = l;
     T[idx].high = h;
     return idx;
+}
+
+//---------------------------------------------------------------------
+// delete a row to table T
+//---------------------------------------------------------------------
+void removeNode(int i, int l, int h)
+{
+//    int u = lookup(i, l, h);
+
+}
+
+//---------------------------------------------------------------------
+// remove a variable from the BDD
+// returns the position(index) of the node in the table
+//---------------------------------------------------------------------
+void removeVar(int i)
+{
 }
 
 /**********************************************************************/
@@ -352,7 +454,6 @@ int build(t_blif_cube **setOfCubes, int cubeCount, int i, int literalVal)
 
 
 
-
         // this allocs more space, but that's ok
         t_blif_cube **v1NewCubes = (cubeCount==0)?(NULL):
             ((t_blif_cube **) malloc(cubeCount * sizeof(t_blif_cube *))); 
@@ -379,13 +480,42 @@ int build(t_blif_cube **setOfCubes, int cubeCount, int i, int literalVal)
     }
 }
 
+int res(int u, int j, int b) 
+{
+    if(T[u].var > j)
+        return u;
+    else if (T[u].var < j)
+        return MK(T[u].var, res(T[u].low, j, b), res(T[u].high, j, b));
+    else
+    {
+        if(LITERAL_0 == b)
+            return res(T[u].low, j, b);
+        else
+            return res(T[u].high, j, b);
+    }
+}
+
+
 int perfOp(int op, int u1, int u2)
 {
+    if(AND == op)
+        return u1 && u2;
+    else if(OR == op)
+        return u1 || u2;
+    else if(XOR == op)
+        return u1 != u2;
+    else if(NAND == op)
+        return !(u1 && u2);
+    else if(NOR == op)
+        return !(u1 || u2);
+    else if(XNOR == op)
+        return !(u1 != u2);
+    //shouldn't get here...
     return 0;
 }
 
 //---------------------------------------------------------------------
-// return the node index
+// return the node index of the root of u1<op>u2
 //---------------------------------------------------------------------
 int APP(int op, int u1, int u2)
 {
@@ -442,7 +572,6 @@ int main(int argc, char* argv[])
             {
                 int idx = function->inputs[i]->data.index;
                 printf("input name = %s\n", circuit->primary_inputs[idx]->data.name);
-                //printf("input name = %s\n", circuit->primary_inputs[index][i].data.name);
             }
             //=====================================================
             // [1] set initial parameters
@@ -451,7 +580,6 @@ int main(int argc, char* argv[])
             initT();
             initG();
 
-            bool isAllX = false;
             if(function->cube_count > 0)
             {
                 //=====================================================
@@ -461,17 +589,6 @@ int main(int argc, char* argv[])
                         sizeof(t_blif_cube *));
                 findPI(function, PIs); //f->set_of_cubes will be freed in findPI, PIs is the only valid list
                 function->set_of_cubes = PIs;
-
-                if(function->cube_count == 1)
-                {
-                    isAllX = true;
-                    int i;
-                    for(i=0; i < numInputs; i++)
-                    {
-                        if(LITERAL_DC != read_cube_variable(function->set_of_cubes[0]->signal_status, i))
-                            isAllX = false;
-                    }
-                }
 
                 //=====================================================
                 // [3] build ROBDD
@@ -483,9 +600,14 @@ int main(int argc, char* argv[])
             //=====================================================
             // [4] output to dot file
             //=====================================================
-            printDOT(function, circuit->primary_inputs, index, isAllX);
+            printDOTfromNode(function, circuit->primary_inputs, index, numTRows-1);
             if(function->cube_count == 0)
                printf("%sWarning: No cubes in function! Skipping...\n%s", BYEL, KEND); 
+
+            //=====================================================
+            // [5] perform Apply ops
+            //=====================================================
+
 		}
 
 		/* Finish. */
