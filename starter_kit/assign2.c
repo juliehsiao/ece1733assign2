@@ -407,6 +407,74 @@ int APP(int op, int u1, int u2)
     return u;
 }
 
+//---------------------------------------------------------------------
+// Sifting function
+// Performs the sifting procedure to try to find the minimal sized BDD
+//---------------------------------------------------------------------
+void sift()
+{
+    // Given the T table containing the current BDD, perform sifting
+    // to find the BDD which contains the minimal number of nodes
+    int i, j;
+
+    //=====================================================
+    // [1] Make a local copy of the T table
+    //=====================================================
+    TRow *localT = (TRow*) malloc (INIT_SIZE * sizeof(TRow));
+    int numlocalTRows = numTRows;
+
+    printf("=====================================\n");
+    printf("Local T Table:\n");
+    printf("|u\t|var\t|low\t|high\n");
+    printf("|0\t|\n");
+    printf("|1\t|\n");
+    for (i = 2; i < numTRows; i++) {
+        localT[i].var = T[i].var;
+        localT[i].low = T[i].low;
+        localT[i].high = T[i].high;
+        printf("|%d\t|x%d\t|%d\t|%d\n", i, localT[i].var, localT[i].low, localT[i].high);
+    }
+    printf("=====================================\n");
+
+    //=====================================================
+    // [2] For each variable, swap with every other
+    //     variable to find the optimal placement
+    //=====================================================
+    for (i = 0; i < numInputs; i++) {
+        for (j = 0; j < numInputs; j++) {
+            if (i == j) continue;
+            //=====================================================
+            // [3] Update the table to reflect the variable swap
+            //     and remove redundant rows
+            //     x_i <=> x_j
+            //=====================================================
+
+            // Modify the table such that:
+            // 1) Entries before the cut line need to point to the correct entry
+
+            // 2) Entries i and j need to be modified to point to the correct entry
+
+
+            // 3) Entries after the cut line don't need to be modified
+
+
+            //=====================================================
+            // [4] Keep track of the optimal position for current
+            //     variable
+            //=====================================================
+
+        }
+        //=====================================================
+        // [5] Modify the local T table after finding optimal pos
+        //=====================================================
+    }
+
+    //=====================================================
+    // [6] Copy the local T table back into the T table
+    //=====================================================
+
+}
+
 /**********************************************************************/
 /*** MAIN FUNCTION ****************************************************/
 /**********************************************************************/
@@ -478,6 +546,8 @@ int main(int argc, char* argv[])
                 //=====================================================
                 build(function->set_of_cubes, function->cube_count, 0, 
                     function->value);
+
+                sift();
             }
 
             //=====================================================
