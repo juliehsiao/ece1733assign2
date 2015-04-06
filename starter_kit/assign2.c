@@ -1,7 +1,6 @@
 ////////////////////////////////////////////////////////////////////////
 // Solution to assignment #1 for ECE1733.
-// This program implements the Quine-McCluskey method for 2-level
-// minimization. 
+// This program implements functions on BDDs
 // Authors: Julie Hsiao & Joy Chen
 ////////////////////////////////////////////////////////////////////////
 
@@ -200,6 +199,19 @@ void printDOT(t_blif_cubical_function *f, t_blif_signal **inputs, int BDDnum, bo
     printf("}\n");
     fprintf(fp, "}\n");
     fclose(fp);
+}
+
+void printTTable (TRow *T, t_blif_cubical_function *f)
+{
+    int i;
+    printf("=====================================\n");
+    printf("|u\t|var\t|low\t|high\n");
+    printf("|0\t|\n");
+    printf("|1\t|\n");
+    for (i = 2; i < numTRows; i++) {
+        printf("|%d\t|%d\t|%d\t|%d\n", i, T[i].var, T[i].low, T[i].high);
+    }
+    printf("=====================================\n");
 }
 
 /**********************************************************************/
@@ -537,73 +549,217 @@ int APP(int op, int u1, int u2)
     return u;
 }
 
+
+//---------------------------------------------------------------------
+// Given a list of t_blif_signals, return the reference to the idx-th
+// element/signal
+//---------------------------------------------------------------------
+/*
+t_blif_signal *findVar (t_blif_signal **inputs, int idx, int size)
+{
+    int i;
+    t_blif_signal **signal = inputs;
+    for (i = 0; i < idx; i++) {
+        assert(i < size);
+        signal++;
+    }
+
+    return *signal;
+}
+*/
+
+int findVarOrderIdx (int *varOrder, int idx, int size) {
+    int i;
+    for (i = 0; i < size; i++) {
+        if (varOrder[i] == idx) return i;
+    }
+    printf("Error, out of range!\n");
+    assert(0);
+}
+
+void swap (int var1, int var2, TRow *localT, TRow *T) {
+    printf("swap: %d <=> %d\n", var1, var2);
+
+    int i;
+    int table[4];
+    // Modify only the first for now!
+    for (i = 0; i < numTRows; i++) {
+        if (T[i].var == var1) {
+            printf("|%d\t|%d\t|%d\t|%d\t|\n", i, T[i].var, T[i].low, T[i].high);
+            if (T[i].low < numTRows && T[i].low > 0) {
+                table[0] = T[T[i].low].low;
+            } else {
+                table[0] = -1;
+            }
+
+            if (T[i].low < numTRows && T[i].low > 0) {
+                table[1] = T[T[i].low].high;
+            } else {
+                table[1] = -1;
+            }
+
+            if (T[i].high < numTRows && T[i].high > 0) {
+                table[2] = T[T[i].high].low;
+            } else {
+                table[2] = -1;
+            }
+
+            if (T[i].high < numTRows && T[i].high > 0) {
+                table[3] = T[T[i].high].high;
+            } else {
+                table[3] = -1;
+            }
+            break;
+        }
+    }
+
+    printf("Table %d %d %d %d\n", table[0], table[1], table[2], table[3]);
+
+    // Swap the orders
+    T[i].var = var2;
+    if (T[i].low < numTRows && T[i].low > 1 && T[T[i].low].var == var2) {
+        T[T[i].low].var = var1;
+        //T[T[i].low].high = T[T[i].high].low;
+        T[T[i].low].high = table[2];
+        printf("mod - T[%d].high <= %d\n", T[i].low, table[2]);
+    }
+
+    if (T[i].high < numTRows && T[i].high > 1 && T[T[i].high].var == var2) {
+        T[T[i].high].var = var1;
+        //T[T[i].high].low = T[T[i].low].high;
+        T[T[i].high].low = table[1];
+        printf("mod - T[%d].low <= %d\n", T[i].high, table[1]);
+    }
+
+    //=====================================================
+    // [1] Set the table to reflect the variable swap
+    //     and remove redundant rows
+    //     x_i <=> x_j
+    //=====================================================
+
+    // Modify the table such that:
+    // 1) Entries before the cut line need to point to the correct entry
+
+    // 2) Entries i and j need to be modified to point to the correct entry
+
+    // 3) Entries after the cut line don't need to be modified
+
+
+    //=====================================================
+    // [2] Keep track of the optimal position for current
+    //     variable
+    //=====================================================
+
+    //=====================================================
+    // [3] Modify the local T table after finding optimal pos
+    //=====================================================
+
+}
+
+void printVarOrder (int *varOrder, int size) {
+    int i;
+    for (i = 0; i < size; i++) {
+        printf("%d\t", varOrder[i]);
+    }
+    printf("\n");
+}
+
+
 //---------------------------------------------------------------------
 // Sifting function
 // Performs the sifting procedure to try to find the minimal sized BDD
 //---------------------------------------------------------------------
-void sift()
+void sift(t_blif_cubical_function *f)
 {
     // Given the T table containing the current BDD, perform sifting
     // to find the BDD which contains the minimal number of nodes
     int i, j;
 
     //=====================================================
-    // [1] Make a local copy of the T table
+    // [1] Need a local copy of the T table
     //=====================================================
     TRow *localT = (TRow*) malloc (INIT_SIZE * sizeof(TRow));
     int numlocalTRows = numTRows;
 
+/*
     printf("=====================================\n");
-    printf("Local T Table:\n");
+    printf("Original T Table:\n");
     printf("|u\t|var\t|low\t|high\n");
     printf("|0\t|\n");
     printf("|1\t|\n");
     for (i = 2; i < numTRows; i++) {
-        localT[i].var = T[i].var;
-        localT[i].low = T[i].low;
-        localT[i].high = T[i].high;
-        printf("|%d\t|x%d\t|%d\t|%d\n", i, localT[i].var, localT[i].low, localT[i].high);
+        //localT[i].var = T[i].var;
+        //localT[i].low = T[i].low;
+        //localT[i].high = T[i].high;
+        printf("|%d\t|x%d\t|%d\t|%d\n", i, T[i].var, T[i].low, T[i].high);
     }
     printf("=====================================\n");
+*/
+    printTTable(T, f);
 
     //=====================================================
     // [2] For each variable, swap with every other
     //     variable to find the optimal placement
     //=====================================================
+    int *varOrder = (int *) malloc (numInputs * sizeof(int));
     for (i = 0; i < numInputs; i++) {
-        for (j = 0; j < numInputs; j++) {
-            if (i == j) continue;
-            //=====================================================
-            // [3] Update the table to reflect the variable swap
-            //     and remove redundant rows
-            //     x_i <=> x_j
-            //=====================================================
+        varOrder[i] = f->inputs[i]->data.index; // initial ordering
+    }
 
-            // Modify the table such that:
-            // 1) Entries before the cut line need to point to the correct entry
+    printVarOrder(varOrder, numInputs);
 
-            // 2) Entries i and j need to be modified to point to the correct entry
+    int varIidx, varJidx;
+    for (i = 0; i < numInputs; i++) {
+        varIidx = findVarOrderIdx(varOrder, i, numInputs);
+        bool reverse = (varIidx == 0) ? false : true; // Need to reverse to the beginning if did not start there
+        // i is the variable number
 
-
-            // 3) Entries after the cut line don't need to be modified
-
-
-            //=====================================================
-            // [4] Keep track of the optimal position for current
-            //     variable
-            //=====================================================
-
+        //=====================================================
+        // [3] Perform swap for each input to test all possible
+        //     positions to find the position of minimum cost
+        //=====================================================
+        for (varJidx = varIidx + 1; varJidx < numInputs; varJidx++) { // swap downward
+            swap(varOrder[varIidx], varOrder[varJidx], localT, T);
+            // update varOrder array
+            int tmp = varOrder[varIidx];
+            varOrder[varIidx] = varOrder[varJidx];
+            varOrder[varJidx] = tmp;
+            printVarOrder(varOrder, numInputs);
+            varIidx++;
+            printTTable(T, f);
+            return; // TODO remove
         }
+
+        if (reverse) {
+            for (; varJidx >= 0; varJidx--) { // swap upward back to beginning
+                swap(varOrder[varIidx], varOrder[varJidx], localT, T);
+                // update varOrder array
+                int tmp = varOrder[varIidx];
+                varOrder[varIidx] = varOrder[varJidx];
+                varOrder[varJidx] = tmp;
+                printVarOrder(varOrder, numInputs);
+                varIidx--;
+            }
+        }
+
         //=====================================================
-        // [5] Modify the local T table after finding optimal pos
+        // [4] Move variable i to optimal position
         //=====================================================
+        //for (j = 0; j < optPos; j++) { // Start with var i at pos 0
+        //    varI = findVar(varOrder, i, numInputs);
+        //    varJ = findVar(varOrder, j, numInputs);
+        //    swap(varI, varJ, localT, varOrder);
+        //}
+
+
     }
 
     //=====================================================
-    // [6] Copy the local T table back into the T table
+    // [5] Copy the local T table back into the T table
     //=====================================================
 
 }
+
 
 /**********************************************************************/
 /*** MAIN FUNCTION ****************************************************/
@@ -664,7 +820,7 @@ int main(int argc, char* argv[])
                 build(function->set_of_cubes, function->cube_count, 0, 
                     function->value);
 
-                sift();
+                sift(function);
             }
 
             //=====================================================
