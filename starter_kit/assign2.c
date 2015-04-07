@@ -50,6 +50,7 @@ int TRowThreshold = INIT_SIZE;
 int numTRows = 0;
 int **G;
 int GThreshold = INIT_SIZE;
+int rNodeIdx;
 
 
 
@@ -141,6 +142,12 @@ void printDOTfromNode(t_blif_cubical_function *f, t_blif_signal **inputs,
     }
     
     printSubGraph(f, inputs, fp, rootNode, printed);
+
+    int i;
+    for (i = 0; i < numTRows; i++) {
+        printf("%d -> %d\n", i, printed[i]);
+
+    }
 
     // free temp bool
     free(printed);
@@ -711,11 +718,23 @@ void printVarOrder (int *varOrder, int size) {
 }
 
 
+int getRootNode (TRow *T, int* varOrder) {
+    int i, j;
+    for (i = 0; i < numInputs; i++) {
+        for (j = 0; j < numTRows; j++) {
+            if (T[j].var == varOrder[i]) return j;
+        }
+    }
+    assert(0);
+}
+
+
 //---------------------------------------------------------------------
 // Sifting function
 // Performs the sifting procedure to try to find the minimal sized BDD
+// Returns the new index of the root node
 //---------------------------------------------------------------------
-void sift(t_blif_cubical_function *f)
+int sift(t_blif_cubical_function *f)
 {
     // Given the T table containing the current BDD, perform sifting
     // to find the BDD which contains the minimal number of nodes
@@ -773,7 +792,7 @@ void sift(t_blif_cubical_function *f)
             printVarOrder(varOrder, numInputs);
             varIidx++;
             printTTable(T, f);
-            return; // TODO remove
+            return getRootNode(T, varOrder); // TODO Remove
         }
 
         if (reverse) {
@@ -854,6 +873,8 @@ int main(int argc, char* argv[])
             initT();
             initG();
 
+            int tmp;
+
             if(function->cube_count > 0)
             {
                 //=====================================================
@@ -870,13 +891,18 @@ int main(int argc, char* argv[])
                 build(function->set_of_cubes, function->cube_count, 0, 
                     function->value);
 
-                if (doSift) sift(function);
+                printf("Before sifting, there are %d rows in T\n", numTRows);
+                if (doSift) tmp = sift(function);
+                printf("After sifting, there are %d rows in T\n", numTRows);
             }
+
+            if (doSift) rNodeIdx = tmp;
+            else rNodeIdx = numTRows - 1;
 
             //=====================================================
             // [4] output to dot file
             //=====================================================
-            printDOTfromNode(function, circuit->primary_inputs, index, numTRows-1);
+            printDOTfromNode(function, circuit->primary_inputs, index, rNodeIdx);
             if(function->cube_count == 0)
                printf("%sWarning: No cubes in function! Skipping...\n%s", BYEL, KEND); 
 
