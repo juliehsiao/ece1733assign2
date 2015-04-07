@@ -568,6 +568,38 @@ t_blif_signal *findVar (t_blif_signal **inputs, int idx, int size)
 }
 */
 
+
+// Remove the idx-th entry from the T table
+void removeTableEntry (TRow *T, int idx, int newIdx) {
+    int i;
+    for (i = 0; i < numTRows; i++) {
+        if (T[i].low == idx) {
+            T[i].low = newIdx;
+        }
+        if (T[i].high == idx) {
+            T[i].high = newIdx;
+        }
+    }
+    return;
+}
+
+// Simplify the entries in the T table
+// An entry can be simplified if both the low and high entries are the same
+void simplifyTable (TRow *T) {
+    int i;
+    for (i = 0; i < numTRows; i++) {
+        if (T[i].low == T[i].high && T[i].low > 0) {
+            printf("Redundant entry: %d|%d|%d|%d|\n", i, T[i].var, T[i].low, T[i].high);
+            removeTableEntry(T, i, T[i].low);
+
+            // Set low and high entries to -1 to signify that it is invalid
+            T[i].low = -1;
+            T[i].high = -1;
+        }
+    }
+    return;
+}
+
 int findVarOrderIdx (int *varOrder, int idx, int size) {
     int i;
     for (i = 0; i < size; i++) {
@@ -582,34 +614,56 @@ void swap (int var1, int var2, TRow *localT, TRow *T) {
 
     int i;
     int table[4];
-    // Modify only the first for now!
+    // Modify only the first encountered pair for now!
     for (i = 0; i < numTRows; i++) {
         if (T[i].var == var1) {
             printf("|%d\t|%d\t|%d\t|%d\t|\n", i, T[i].var, T[i].low, T[i].high);
+            // Here are the possibilities:
+            // a) low points to an entry representing var2
+            // b) low points to an entry representing a valid variable not var2
+            // c) low points to an entry representing 0/1
+            // that's all folks, assert otherwise
             if (T[i].low < numTRows && T[i].low > 0) {
-                table[0] = T[T[i].low].low;
-            } else {
-                table[0] = -1;
+                if (T[T[i].low].var == var2) { // a
+                    table[0] = T[T[i].low].low;
+                } else if (T[i].low < numTRows && T[i].low > 0) { // b, c treated the same
+                    table[0] = T[i].low;
+                } else {
+                    assert(0);
+                }
             }
 
             if (T[i].low < numTRows && T[i].low > 0) {
-                table[1] = T[T[i].low].high;
-            } else {
-                table[1] = -1;
+                if (T[T[i].low].var == var2) { // a
+                    table[1] = T[T[i].low].high;
+                } else if (T[i].low < numTRows && T[i].low > 0) { // b, c treated the same
+                    table[1] = T[i].low;
+                } else {
+                    assert(0);
+                }
             }
 
             if (T[i].high < numTRows && T[i].high > 0) {
-                table[2] = T[T[i].high].low;
-            } else {
-                table[2] = -1;
+                if (T[T[i].high].var == var2) { // a
+                    table[2] = T[T[i].high].low;
+                } else if (T[i].high < numTRows && T[i].high > 0) { // b, c treated the same
+                    table[2] = T[i].high;
+                } else {
+                    assert(0);
+                }
             }
 
             if (T[i].high < numTRows && T[i].high > 0) {
-                table[3] = T[T[i].high].high;
-            } else {
-                table[3] = -1;
+                if (T[T[i].high].var == var2) { // a
+                    table[3] = T[T[i].high].high;
+                } else if (T[i].high < numTRows && T[i].high > 0) { // b, c treated the same
+                    table[3] = T[i].high;
+                } else {
+                    assert(0);
+                }
             }
-            break;
+
+            break; // TODO change this if you want to handle more than 1 pattern
         }
     }
 
@@ -630,6 +684,8 @@ void swap (int var1, int var2, TRow *localT, TRow *T) {
         T[T[i].high].low = table[1];
         printf("mod - T[%d].low <= %d\n", T[i].high, table[1]);
     }
+
+    simplifyTable(T);
 
     //=====================================================
     // [1] Set the table to reflect the variable swap
@@ -771,15 +827,19 @@ int main(int argc, char* argv[])
 	debug = false;
 	t_blif_logic_circuit *circuit = NULL;
 
-	if (argc != 2)
+	if (argc < 2)
 	{
-		printf("Usage: %s <source BLIF file>\r\n", argv[0]);
+		printf("Usage: %s <source BLIF file> <options>\r\n", argv[0]);
 		return 0;
 	}
 
 	/* Read BLIF circuit. */
 	printf("Reading file %s...\n",argv[1]);
 	circuit = ReadBLIFCircuit(argv[1]);
+    doSift = 0;
+    if (argc == 3) {
+        doSift = atoi(argv[2]);
+    }
 
 	if (circuit != NULL)
 	{
@@ -820,7 +880,7 @@ int main(int argc, char* argv[])
                 build(function->set_of_cubes, function->cube_count, 0, 
                     function->value);
 
-                sift(function);
+                if (doSift) sift(function);
             }
 
             //=====================================================
