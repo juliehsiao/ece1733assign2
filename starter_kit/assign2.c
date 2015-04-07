@@ -609,6 +609,10 @@ int findVarOrderIdx (int *varOrder, int idx, int size) {
     assert(0);
 }
 
+
+// Swap the variables inputs[var1] and inputs[var2] order in the T table
+// TODO need to handle when an entry for var1 DNE in T table
+// TODO handle switching the references to var1 in previous entries
 void swap (int var1, int var2, TRow *localT, TRow *T) {
     printf("swap: %d <=> %d\n", var1, var2);
 
@@ -617,7 +621,8 @@ void swap (int var1, int var2, TRow *localT, TRow *T) {
     // Modify only the first encountered pair for now!
     for (i = 0; i < numTRows; i++) {
         if (T[i].var == var1) {
-            printf("|%d\t|%d\t|%d\t|%d\t|\n", i, T[i].var, T[i].low, T[i].high);
+            //printf("|%d\t|%d\t|%d\t|%d\t|\n", i, T[i].var, T[i].low, T[i].high);
+
             // Here are the possibilities:
             // a) low points to an entry representing var2
             // b) low points to an entry representing a valid variable not var2
@@ -626,40 +631,27 @@ void swap (int var1, int var2, TRow *localT, TRow *T) {
             if (T[i].low < numTRows && T[i].low > 0) {
                 if (T[T[i].low].var == var2) { // a
                     table[0] = T[T[i].low].low;
-                } else if (T[i].low < numTRows && T[i].low > 0) { // b, c treated the same
-                    table[0] = T[i].low;
-                } else {
-                    assert(0);
-                }
-            }
-
-            if (T[i].low < numTRows && T[i].low > 0) {
-                if (T[T[i].low].var == var2) { // a
                     table[1] = T[T[i].low].high;
-                } else if (T[i].low < numTRows && T[i].low > 0) { // b, c treated the same
+                } else { // b, c treated the same
+                    table[0] = T[i].low;
                     table[1] = T[i].low;
-                } else {
-                    assert(0);
+                    // Create new entry in the table because there are less than three nodes in this pattern
+                    T[i].low = add(var1, table[0], table[2]);
                 }
             }
 
             if (T[i].high < numTRows && T[i].high > 0) {
                 if (T[T[i].high].var == var2) { // a
                     table[2] = T[T[i].high].low;
-                } else if (T[i].high < numTRows && T[i].high > 0) { // b, c treated the same
-                    table[2] = T[i].high;
-                } else {
-                    assert(0);
-                }
-            }
-
-            if (T[i].high < numTRows && T[i].high > 0) {
-                if (T[T[i].high].var == var2) { // a
                     table[3] = T[T[i].high].high;
-                } else if (T[i].high < numTRows && T[i].high > 0) { // b, c treated the same
+                } else { // b, c treated the same
+                    table[2] = T[i].high;
                     table[3] = T[i].high;
-                } else {
-                    assert(0);
+                    // Here need to create a new entry in the table because there are less than three nodes in this pattern
+                    // Create a new variable which represents var1, low points to table[1], high points to table[3]
+                    // Also modify the var2 high to point to this new entry
+                    T[i].high = add(var1, table[1], table[3]);
+
                 }
             }
 
@@ -667,20 +659,18 @@ void swap (int var1, int var2, TRow *localT, TRow *T) {
         }
     }
 
-    printf("Table %d %d %d %d\n", table[0], table[1], table[2], table[3]);
+    printf("Table\t%d\t%d\t%d\t%d\n", table[0], table[1], table[2], table[3]);
 
     // Swap the orders
     T[i].var = var2;
     if (T[i].low < numTRows && T[i].low > 1 && T[T[i].low].var == var2) {
         T[T[i].low].var = var1;
-        //T[T[i].low].high = T[T[i].high].low;
         T[T[i].low].high = table[2];
         printf("mod - T[%d].high <= %d\n", T[i].low, table[2]);
     }
 
     if (T[i].high < numTRows && T[i].high > 1 && T[T[i].high].var == var2) {
         T[T[i].high].var = var1;
-        //T[T[i].high].low = T[T[i].low].high;
         T[T[i].high].low = table[1];
         printf("mod - T[%d].low <= %d\n", T[i].high, table[1]);
     }
