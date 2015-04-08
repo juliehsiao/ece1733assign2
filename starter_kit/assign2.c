@@ -28,6 +28,7 @@ typedef struct _TRow {
     int var;
     int low;
     int high;
+    bool swapped; // a bool for whether the entry has been swapped already
 } TRow;
 
 /**********************************************************************/
@@ -53,6 +54,7 @@ int **G;
 int GThreshold = INIT_SIZE;
 t_blif_cubical_function *curFunc;
 int *outRoot;
+int rNodeIdx;
 
 
 
@@ -211,11 +213,11 @@ void printTTable (TRow *T, t_blif_cubical_function *f)
 {
     int i;
     printf("=====================================\n");
-    printf("|u\t|var\t|low\t|high\n");
+    printf("|u\t|var\t|low\t|high\t|swapped|\n");
     printf("|0\t|\n");
     printf("|1\t|\n");
     for (i = 2; i < numTRows; i++) {
-        printf("|%d\t|%d\t|%d\t|%d\n", i, T[i].var, T[i].low, T[i].high);
+        printf("|%d\t|%d\t|%d\t|%d\t|%d\n", i, T[i].var, T[i].low, T[i].high, T[i].swapped);
     }
     printf("=====================================\n");
 }
@@ -328,6 +330,7 @@ int add(int i, int l, int h)
     T[idx].var = i;
     T[idx].low = l;
     T[idx].high = h;
+    T[idx].swapped = false;
     return idx;
 }
 
@@ -735,38 +738,52 @@ int findVarOrderIdx (int *varOrder, int idx, int size) {
 }
 
 
+// Resets all the T[i].swapped members to false (at the beginning of swap)
+// This is necessary since at the beginning of each swap, every node is available for swapping
+void resetSwapped(TRow *T) {
+    int i;
+    for (i = 0; i < numTRows; i++) {
+        T[i].swapped = false;
+    }
+}
+
+
 // Swap the variables inputs[var1] and inputs[var2] order in the T table
 // TODO need to handle when an entry for var1 DNE in T table
 // TODO handle switching the references to var1 in previous entries
-void swap (int var1, int var2, TRow *localT, TRow *T) {
-    printf("swap: %d <=> %d\n", var1, var2);
+void swap (t_blif_cubical_function *f, int var1, int var2, TRow *localT, TRow *T) {
+    resetSwapped(T);
+    printf("%sSWAP%s: %d <=> %d\n", BRED, KEND, var1, var2);
+
+    int swapTmp = 0;
 
     int i;
     int table[4];
     // Modify only the first encountered pair for now!
     for (i = 0; i < numTRows; i++) {
-        if (T[i].var == var1) {
-            //printf("|%d\t|%d\t|%d\t|%d\t|\n", i, T[i].var, T[i].low, T[i].high);
+        if (T[i].var == var1 && !T[i].swapped) {
+            printf("Examining entry>>> |%d\t|%d\t|%d\t|%d\t|\n", i, T[i].var, T[i].low, T[i].high);
 
             // Here are the possibilities:
             // a) low points to an entry representing var2
             // b) low points to an entry representing a valid variable not var2
             // c) low points to an entry representing 0/1
             // that's all folks, assert otherwise
-            if (T[i].low < numTRows && T[i].low > 0) {
-                if (T[T[i].low].var == var2) { // a
+            if (T[i].low < numTRows && T[i].low >= 0) {
+                if (T[T[i].low].var == var2 && T[i].low > 1) { // a
                     table[0] = T[T[i].low].low;
                     table[1] = T[T[i].low].high;
                 } else { // b, c treated the same
                     table[0] = T[i].low;
                     table[1] = T[i].low;
                     // Create new entry in the table because there are less than three nodes in this pattern
-                    T[i].low = add(var1, table[0], table[2]);
+                    T[i].low = MK(var1, table[0], table[2]);
+                    T[T[i].low].swapped = true;
                 }
             }
 
-            if (T[i].high < numTRows && T[i].high > 0) {
-                if (T[T[i].high].var == var2) { // a
+            if (T[i].high < numTRows && T[i].high >= 0) {
+                if (T[T[i].high].var == var2 && T[i].low > 1) { // a
                     table[2] = T[T[i].high].low;
                     table[3] = T[T[i].high].high;
                 } else { // b, c treated the same
@@ -775,32 +792,41 @@ void swap (int var1, int var2, TRow *localT, TRow *T) {
                     // Here need to create a new entry in the table because there are less than three nodes in this pattern
                     // Create a new variable which represents var1, low points to table[1], high points to table[3]
                     // Also modify the var2 high to point to this new entry
-                    T[i].high = add(var1, table[1], table[3]);
+                    T[i].high = MK(var1, table[1], table[3]);
+                    T[T[i].high].swapped = true;
 
                 }
             }
 
-            break; // TODO change this if you want to handle more than 1 pattern
+            printf("%sTable%s\t%d\t%d\t%d\t%d\n", KCYN, KEND, table[0], table[1], table[2], table[3]);
+            printTTable(T, f);
+            // Swap the orders
+            T[i].var = var2;
+            T[i].swapped = true;
+		    if (T[i].low < numTRows && T[i].low > 1 && T[T[i].low].var == var2) {
+		        T[T[i].low].var = var1;
+		        T[T[i].low].high = table[2];
+		        T[T[i].low].swapped = true;
+		        //printf("mod - T[%d].high <= %d\n", T[i].low, table[2]);
+		    }
+		
+		    if (T[i].high < numTRows && T[i].high > 1 && T[T[i].high].var == var2) {
+		        T[T[i].high].var = var1;
+		        T[T[i].high].low = table[1];
+		        T[T[i].high].swapped = true;
+		        //printf("mod - T[%d].low <= %d\n", T[i].high, table[1]);
+		    }
+            simplifyTable(T);
+            printf("%sSimplified Table after swap:%s\n", BRED, KEND);
+
+            // TODO BOOKMARK start coding here:
+            // The issue is that somehow the update is not correct and we have entries looping back onto itself
+            // To find the error reconsider this whole control loop...
+            // Where are the updates supposed to happen, is the simplification function correct?
         }
     }
 
-    printf("Table\t%d\t%d\t%d\t%d\n", table[0], table[1], table[2], table[3]);
-
-    // Swap the orders
-    T[i].var = var2;
-    if (T[i].low < numTRows && T[i].low > 1 && T[T[i].low].var == var2) {
-        T[T[i].low].var = var1;
-        T[T[i].low].high = table[2];
-        printf("mod - T[%d].high <= %d\n", T[i].low, table[2]);
-    }
-
-    if (T[i].high < numTRows && T[i].high > 1 && T[T[i].high].var == var2) {
-        T[T[i].high].var = var1;
-        T[T[i].high].low = table[1];
-        printf("mod - T[%d].low <= %d\n", T[i].high, table[1]);
-    }
-
-    simplifyTable(T);
+    printTTable(T, f);
 
     //=====================================================
     // [1] Set the table to reflect the variable swap
@@ -836,11 +862,23 @@ void printVarOrder (int *varOrder, int size) {
 }
 
 
+int getRootNode (TRow *T, int* varOrder) {
+    int i, j;
+    for (i = 0; i < numInputs; i++) {
+        for (j = 0; j < numTRows; j++) {
+            if (T[j].var == varOrder[i]) return j;
+        }
+    }
+    assert(0);
+}
+
+
 //---------------------------------------------------------------------
 // Sifting function
 // Performs the sifting procedure to try to find the minimal sized BDD
+// Returns the new index of the root node
 //---------------------------------------------------------------------
-void sift(t_blif_cubical_function *f)
+int sift(t_blif_cubical_function *f)
 {
     // Given the T table containing the current BDD, perform sifting
     // to find the BDD which contains the minimal number of nodes
@@ -889,18 +927,20 @@ void sift(t_blif_cubical_function *f)
         // [3] Perform swap for each input to test all possible
         //     positions to find the position of minimum cost
         //=====================================================
+        int count = 0;
         for (varJidx = varIidx + 1; varJidx < numInputs; varJidx++) { // swap downward
-            swap(varOrder[varIidx], varOrder[varJidx], localT, T);
+            swap(f, varOrder[varIidx], varOrder[varJidx], localT, T);
+            count++;
             // update varOrder array
             int tmp = varOrder[varIidx];
             varOrder[varIidx] = varOrder[varJidx];
             varOrder[varJidx] = tmp;
             printVarOrder(varOrder, numInputs);
             varIidx++;
-            printTTable(T, f);
-            return; // TODO remove
+            //printTTable(T, f);
+            if (count == 2) return getRootNode(T, varOrder); // TODO Remove
         }
-
+/*
         if (reverse) {
             for (; varJidx >= 0; varJidx--) { // swap upward back to beginning
                 swap(varOrder[varIidx], varOrder[varJidx], localT, T);
@@ -912,7 +952,7 @@ void sift(t_blif_cubical_function *f)
                 varIidx--;
             }
         }
-
+*/
         //=====================================================
         // [4] Move variable i to optimal position
         //=====================================================
@@ -929,6 +969,7 @@ void sift(t_blif_cubical_function *f)
     // [5] Copy the local T table back into the T table
     //=====================================================
 
+    return getRootNode(T, varOrder);
 }
 
 
@@ -988,6 +1029,8 @@ int main(int argc, char* argv[])
             //initT();
             //initG();
 
+            int tmp;
+
             if(function->cube_count > 0)
             {
                 //=====================================================
@@ -1004,13 +1047,20 @@ int main(int argc, char* argv[])
                 outRoot[index] = build(function->set_of_cubes, 
                         function->cube_count, 0, function->value);
 
-                if (doSift) sift(function);
+                printf("Before sifting, there are %d rows in T\n", numTRows);
+                if (doSift) tmp = sift(function);
+                printf("After sifting, there are %d rows in T\n", numTRows);
             }
+
+            if (doSift) rNodeIdx = tmp;
+            else rNodeIdx = numTRows - 1;
+
+            printf("%sRoot Node%s %d\n", KGRN, KEND, rNodeIdx);
 
             //=====================================================
             // [4] output to dot file
             //=====================================================
-            printDOTfromNode(circuit->primary_inputs, index, numTRows-1);
+            printDOTfromNode(function, circuit->primary_inputs, index, rNodeIdx);
             if(function->cube_count == 0)
                printf("%sWarning: No cubes in function! Skipping...\n%s", BYEL, KEND); 
 		}
