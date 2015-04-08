@@ -1060,7 +1060,7 @@ int main(int argc, char* argv[])
             //=====================================================
             // [4] output to dot file
             //=====================================================
-            printDOTfromNode(function, circuit->primary_inputs, index, rNodeIdx);
+            printDOTfromNode(circuit->primary_inputs, index, rNodeIdx);
             if(function->cube_count == 0)
                printf("%sWarning: No cubes in function! Skipping...\n%s", BYEL, KEND); 
 		}
