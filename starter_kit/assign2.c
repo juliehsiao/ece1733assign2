@@ -44,25 +44,32 @@ typedef struct _TRow {
 /**********************************************************************/
 /*** GLOBAL VARIABLES *************************************************/
 /**********************************************************************/
+int totalNumInputs = 0;
 int numInputs = 0;
 TRow *T;
 int TRowThreshold = INIT_SIZE;
 int numTRows = 0;
 int **G;
 int GThreshold = INIT_SIZE;
+t_blif_cubical_function *curFunc;
+int *outRoot;
 
 
 
 /**********************************************************************/
 /*** Functions for printing BDD graph *********************************/
 /**********************************************************************/
-void printSubGraph(t_blif_cubical_function *f, t_blif_signal **inputs, FILE *fp,
-        int u, bool *printed)
+void printSubGraph(t_blif_signal **inputs, FILE *fp, int u, bool *printed)
 {
-    int nameIdx = f->inputs[T[u].var]->data.index;
-    //set the name of this node
-    printf("\t%d [label=\"%s\"];\n", u, inputs[nameIdx]->data.name);
-    fprintf(fp, "\t%d [label=\"%s\"];\n", u, inputs[nameIdx]->data.name);
+    //TODO: print the node number??
+    
+    int nameIdx = T[u].var;
+    if(nameIdx < totalNumInputs)
+    {
+        //set the name of this node
+        printf("\t%d [label=\"%s\"];\n", u, inputs[nameIdx]->data.name);
+        fprintf(fp, "\t%d [label=\"%s\"];\n", u, inputs[nameIdx]->data.name);
+    }
 
     //--------------------------
     // print low subgraph
@@ -77,7 +84,7 @@ void printSubGraph(t_blif_cubical_function *f, t_blif_signal **inputs, FILE *fp,
     {
         // print the subgraph if it hasn't been printed
         if(false == printed[T[u].low])
-            printSubGraph(f, inputs, fp, T[u].low, printed);
+            printSubGraph(inputs, fp, T[u].low, printed);
 
         // print the 0-path of this node
         printf("\t%d -> %d [label=\" 0\"];\n", u, T[u].low);
@@ -99,7 +106,7 @@ void printSubGraph(t_blif_cubical_function *f, t_blif_signal **inputs, FILE *fp,
     {
         // print the subgraph if it hasn't been printed
         if(false == printed[T[u].high])
-            printSubGraph(f, inputs, fp, T[u].high, printed);
+            printSubGraph(inputs, fp, T[u].high, printed);
 
         // print the 1-path of this node
         printf("\t%d -> %d [label=\" 1\" fontcolor=blue] [color=blue];\n", 
@@ -112,8 +119,7 @@ void printSubGraph(t_blif_cubical_function *f, t_blif_signal **inputs, FILE *fp,
     printed[u] = true;
 }
 
-void printDOTfromNode(t_blif_cubical_function *f, t_blif_signal **inputs, 
-        int BDDnum, int rootNode)
+void printDOTfromNode(t_blif_signal **inputs, int BDDnum, int rootNode)
 {
     printf("there are %d inputs and %d nodes in total\n", numInputs, numTRows);
 
@@ -127,7 +133,7 @@ void printDOTfromNode(t_blif_cubical_function *f, t_blif_signal **inputs,
     memset(printed, false, numTRows * sizeof(bool));
 
     printf("digraph BDD {\n");
-    fprintf(fp, "digraph BDD {\n");
+    fprintf(fp, "digraph BDD {\n"); //TODO: change this to the function name (name taken in param)
     
     if(rootNode != 0)
     {
@@ -140,7 +146,7 @@ void printDOTfromNode(t_blif_cubical_function *f, t_blif_signal **inputs,
         fprintf(fp, "\t0 [shape=box];\n");
     }
     
-    printSubGraph(f, inputs, fp, rootNode, printed);
+    printSubGraph(inputs, fp, rootNode, printed);
 
     // free temp bool
     free(printed);
@@ -224,9 +230,39 @@ void printTTable (TRow *T, t_blif_cubical_function *f)
 //---------------------------------------------------------------------
 void initG()
 {
-    G = (int **) malloc(INIT_SIZE * INIT_SIZE * sizeof(int));
-    // initialize all value to -1 (empty)
-    memset(G, -1, INIT_SIZE * INIT_SIZE * sizeof(int));
+    G = (int **) malloc(INIT_SIZE * sizeof(int *));
+    int i;
+    for(i=0; i<INIT_SIZE; i++)
+    {
+        G[i] = (int *) malloc(INIT_SIZE * sizeof(int));
+        // initialize all value to -1 (empty)
+        memset(G[i], -1, INIT_SIZE * sizeof(int));
+    }
+}
+
+//---------------------------------------------------------------------
+// Deallocate the space assigned to table G
+//---------------------------------------------------------------------
+void freeG()
+{
+    int i;
+    for(i=0; i<GThreshold; i++)
+    {
+        free(G[i]);
+    }
+    free(G);
+}
+
+//---------------------------------------------------------------------
+// Initialize the table G to empty state (-1)
+//---------------------------------------------------------------------
+void clearG()
+{
+    int i;
+    for(i=0; i<GThreshold; i++)
+    {
+        memset(G[i], -1, INIT_SIZE * sizeof(int));
+    }
 }
 
 //---------------------------------------------------------------------
@@ -260,9 +296,17 @@ void initT()
     // reserve space for terminal nodes only
     T = (TRow*) malloc(INIT_SIZE * sizeof(TRow));
     // initialize value for the terminal nodes
-    T[0].var = numInputs; // terminal node 0
-    T[1].var = numInputs; // terminal node 1
+    T[0].var = totalNumInputs; // terminal node 0
+    T[1].var = totalNumInputs; // terminal node 1
     numTRows = 2;
+}
+
+//---------------------------------------------------------------------
+// Deallocate the space assigned to table T
+//---------------------------------------------------------------------
+void freeT()
+{
+    free(T);
 }
 
 //---------------------------------------------------------------------
@@ -488,7 +532,10 @@ int build(t_blif_cube **setOfCubes, int cubeCount, int i, int literalVal)
         if(v1NewCubes)
             freeSetOfCubes(v1NewCubes, v1NewCubeCount);
 
-        return MK(i, v0, v1);
+        printf("v0Literal=%d \t v1Literal=%d\n", v0Literal, v1Literal);
+        int varIdx = curFunc->inputs[i]->data.index;
+        printf("varIdx = %d\n", varIdx);
+        return MK(varIdx, v0, v1);
     }
 }
 
@@ -567,6 +614,84 @@ t_blif_signal *findVar (t_blif_signal **inputs, int idx, int size)
     return *signal;
 }
 */
+
+//---------------------------------------------------------------------
+// Given a variable name, find the first node matching that name
+// returns index to the matching node
+//---------------------------------------------------------------------
+int findVar(t_blif_logic_circuit *circuit, char* varName)
+{
+    int varIdx = -1;
+    int node = -1;
+    int i;
+    for(i=0; i<circuit->primary_input_count; i++)
+    {
+        if(0==strcmp(varName, circuit->primary_inputs[i]->data.name))
+        {
+            varIdx = i;
+            break;
+        }
+    }
+    if(-1==varIdx)
+    {
+        printf("ERROR: variable %s not recognized!\n", varName);
+    }
+    else
+    {
+        for(i=0; i<numTRows; i++)
+        {
+            if(T[i].var == varIdx)
+                node = i;
+        }
+    }
+
+    return node;
+}
+
+//---------------------------------------------------------------------
+// Finds the root node of a function, given an output name
+// returns index to the root node
+//---------------------------------------------------------------------
+int findOutput(t_blif_logic_circuit *circuit, char* varName)
+{
+    int node = -1;
+    int i;
+    for(i=0; i<circuit->primary_output_count; i++)
+    {
+        if(0==strcmp(varName, circuit->primary_outputs[i]->data.name))
+        {
+            node = outRoot[i];
+            break;
+        }
+    }
+    if(-1==node)
+    {
+        printf("ERROR: function %s not recognized!\n", varName);
+    }
+
+    return node;
+}
+
+//---------------------------------------------------------------------
+// translate op string into it's numerical value
+//---------------------------------------------------------------------
+int translateOp(char* op)
+{
+    if(!strcmp(op, "AND") || !strcmp(op, "and"))
+        return AND;
+    if(!strcmp(op, "OR") || !strcmp(op, "or"))
+        return OR;
+    if(!strcmp(op, "XOR") || !strcmp(op, "xor"))
+        return XOR;
+    if(!strcmp(op, "NAND") || !strcmp(op, "nand"))
+        return NAND;
+    if(!strcmp(op, "NOR") || !strcmp(op, "nor"))
+        return NOR;
+    if(!strcmp(op, "XNOR") || !strcmp(op, "xnor"))
+        return XNOR;
+    //should not fall to here
+    return -1;
+}
 
 
 // Remove the idx-th entry from the T table
@@ -837,9 +962,18 @@ int main(int argc, char* argv[])
 
 		/* build BDD for each function, one at a time. */
 		printf("Building BDD for logic functions\n\n");
+        //=====================================================
+        // [1] set initial parameters
+        //=====================================================
+        totalNumInputs = circuit->primary_input_count;
+        initT();
+        initG();
+        outRoot = (int *) malloc(circuit->primary_output_count * sizeof(int));
+
 		for (index = 0; index < circuit->function_count; index++)
 		{
 			t_blif_cubical_function *function = circuit->list_of_functions[index];
+            curFunc = function;
 
             int i;
             for(i=0; i<function->input_count; i++)
@@ -851,8 +985,8 @@ int main(int argc, char* argv[])
             // [1] set initial parameters
             //=====================================================
             numInputs = function->input_count;
-            initT();
-            initG();
+            //initT();
+            //initG();
 
             if(function->cube_count > 0)
             {
@@ -867,8 +1001,8 @@ int main(int argc, char* argv[])
                 //=====================================================
                 // [3] build ROBDD
                 //=====================================================
-                build(function->set_of_cubes, function->cube_count, 0, 
-                    function->value);
+                outRoot[index] = build(function->set_of_cubes, 
+                        function->cube_count, 0, function->value);
 
                 if (doSift) sift(function);
             }
@@ -876,15 +1010,62 @@ int main(int argc, char* argv[])
             //=====================================================
             // [4] output to dot file
             //=====================================================
-            printDOTfromNode(function, circuit->primary_inputs, index, numTRows-1);
+            printDOTfromNode(circuit->primary_inputs, index, numTRows-1);
             if(function->cube_count == 0)
                printf("%sWarning: No cubes in function! Skipping...\n%s", BYEL, KEND); 
-
-            //=====================================================
-            // [5] perform Apply ops
-            //=====================================================
-
 		}
+
+        //=====================================================
+        // [5] perform Apply ops
+        //=====================================================
+        char applyCmd[100];
+        int op = -1;
+        int node1 = -1;
+        int node2 = -1;
+        while(1)
+        {
+            printf("Enter Apply cmd (i.e. \"f AND g\") or \"exit\":\n");
+            printf("Apply >");
+            fgets(applyCmd, 100, stdin);
+            printf("reveived: %s\n", applyCmd);
+
+            if(!strcmp("exit\n", applyCmd))
+                break;
+
+            // parse command
+            char *word = strtok(applyCmd, " \n");
+            if(word != NULL)
+                //node1 = findVar(circuit, word);
+                node1 = findOutput(circuit, word);
+            word = strtok(NULL, " \n");
+            if(word != NULL)
+                op = translateOp(word);
+            word = strtok(NULL, " \n");
+            if(word != NULL)
+                //node2 = findVar(circuit, word);
+                node2 = findOutput(circuit, word);
+
+            if(op==-1 || node1==-1 || node2==-1)
+            {
+                printf("Please enter a command in the form \"f AND g\".");
+                continue;
+            }
+            else
+                printf("op=%d, node1=%d, node2=%d\n", op, node1, node2);
+            //do apply
+            clearG();
+            int applyRoot = APP(op, node1, node2);
+            printf("applyRoot=%d\n", applyRoot);
+            printDOTfromNode(circuit->primary_inputs, index++, applyRoot);
+// TODO: this somehow only works for the first time through.... need to fix the rest
+        }
+
+        //=====================================================
+        // [6] clean up
+        //=====================================================
+        freeT();
+        freeG();
+        free(outRoot);
 
 		/* Finish. */
 		printf("Done.\r\n");
