@@ -299,7 +299,11 @@ void initT()
     T = (TRow*) malloc(INIT_SIZE * sizeof(TRow));
     // initialize value for the terminal nodes
     T[0].var = totalNumInputs; // terminal node 0
+    T[0].low = -1;
+    T[0].high = -1;
     T[1].var = totalNumInputs; // terminal node 1
+    T[1].low = -1;
+    T[1].high = -1;
     numTRows = 2;
 }
 
@@ -342,6 +346,22 @@ void removeNode(int i, int l, int h)
 //    int u = lookup(i, l, h);
 
 }
+
+
+//---------------------------------------------------------------------
+// count the number of valid rows in T
+//---------------------------------------------------------------------
+int numValidRows(TRow *T)
+{
+    int i;
+    int res = 2;
+    for (i = 2; i < numTRows; i++) {
+        if (T[i].var >= 0 && T[i].var < numInputs && T[i].low >= 0 && T[i].low < numTRows
+            && T[i].high >= 0 && T[i].high < numTRows) res++;
+    }
+    return res;
+}
+
 
 //---------------------------------------------------------------------
 // remove a variable from the BDD
@@ -700,7 +720,7 @@ int translateOp(char* op)
 // Remove the idx-th entry from the T table
 void removeTableEntry (TRow *T, int idx, int newIdx) {
     int i;
-    for (i = 0; i < numTRows; i++) {
+    for (i = 2; i < numTRows; i++) {
         if (T[i].low == idx) {
             T[i].low = newIdx;
         }
@@ -715,8 +735,9 @@ void removeTableEntry (TRow *T, int idx, int newIdx) {
 // An entry can be simplified if both the low and high entries are the same
 void simplifyTable (TRow *T) {
     int i;
-    for (i = 0; i < numTRows; i++) {
-        if (T[i].low == T[i].high && T[i].low > 0) {
+    for (i = 2; i < numTRows; i++) {
+        if (T[i].low < 0 || T[i].low > numTRows || T[i].high < 0 || T[i].high > numTRows) continue;
+        if (T[i].low == T[i].high && T[i].low >= 0) {
             printf("Redundant entry: %d|%d|%d|%d|\n", i, T[i].var, T[i].low, T[i].high);
             removeTableEntry(T, i, T[i].low);
 
@@ -751,57 +772,67 @@ void resetSwapped(TRow *T) {
 // Swap the variables inputs[var1] and inputs[var2] order in the T table
 // TODO need to handle when an entry for var1 DNE in T table
 // TODO handle switching the references to var1 in previous entries
-void swap (t_blif_cubical_function *f, int var1, int var2, TRow *localT, TRow *T) {
+int swap (t_blif_cubical_function *f, int var1, int var2, TRow *localT, TRow *T) {
     resetSwapped(T);
     printf("%sSWAP%s: %d <=> %d\n", BRED, KEND, var1, var2);
 
     int swapTmp = 0;
 
     int i;
-    int table[4];
+    int table[4] = {-1, -1, -1, -1};
     // Modify only the first encountered pair for now!
     for (i = 0; i < numTRows; i++) {
-        if (T[i].var == var1 && !T[i].swapped) {
-            printf("Examining entry>>> |%d\t|%d\t|%d\t|%d\t|\n", i, T[i].var, T[i].low, T[i].high);
+        if (T[i].var == var1 && !T[i].swapped && T[i].low >= 0 && T[i].low < numTRows && T[i].high >= 0 && T[i].high < numTRows) {
 
             // Here are the possibilities:
             // a) low points to an entry representing var2
             // b) low points to an entry representing a valid variable not var2
             // c) low points to an entry representing 0/1
             // that's all folks, assert otherwise
+
+
             if (T[i].low < numTRows && T[i].low >= 0) {
                 if (T[T[i].low].var == var2 && T[i].low > 1) { // a
                     table[0] = T[T[i].low].low;
                     table[1] = T[T[i].low].high;
-                } else { // b, c treated the same
+                } else {
                     table[0] = T[i].low;
                     table[1] = T[i].low;
-                    // Create new entry in the table because there are less than three nodes in this pattern
-                    T[i].low = MK(var1, table[0], table[2]);
+                }
+            }
+
+            if (T[i].high < numTRows && T[i].high >= 0) {
+                if (T[T[i].high].var == var2 && T[i].high > 1) { // a
+                    table[2] = T[T[i].high].low;
+                    table[3] = T[T[i].high].high;
+                } else {
+                    table[2] = T[i].high;
+                    table[3] = T[i].high;
+                }
+            }
+
+            printf("Examining entry>>> |%d\t|%d\t|%d\t|%d\t|\n", i, T[i].var, T[i].low, T[i].high);
+            printf("Table %d %d %d %d\n", table[0], table[1], table[2], table[3]);
+
+            if (T[i].low < numTRows && T[i].low >= 0) {
+                if (!(T[T[i].low].var == var2 && T[i].low > 1)) { // b, c
+                    T[i].low = add(var1, table[0], table[2]);
                     T[T[i].low].swapped = true;
                 }
             }
 
             if (T[i].high < numTRows && T[i].high >= 0) {
-                if (T[T[i].high].var == var2 && T[i].low > 1) { // a
-                    table[2] = T[T[i].high].low;
-                    table[3] = T[T[i].high].high;
-                } else { // b, c treated the same
-                    table[2] = T[i].high;
-                    table[3] = T[i].high;
-                    // Here need to create a new entry in the table because there are less than three nodes in this pattern
-                    // Create a new variable which represents var1, low points to table[1], high points to table[3]
-                    // Also modify the var2 high to point to this new entry
-                    T[i].high = MK(var1, table[1], table[3]);
+                if (!(T[T[i].high].var == var2 && T[i].low > 1)) { // b, c
+                    T[i].high = add(var1, table[1], table[3]);
                     T[T[i].high].swapped = true;
-
                 }
             }
 
-            printf("%sTable%s\t%d\t%d\t%d\t%d\n", KCYN, KEND, table[0], table[1], table[2], table[3]);
-            printTTable(T, f);
+            //printTTable(T, f);
             // Swap the orders
+            printf("%svar2 %d%s\n", KMAG, var2, KEND);
             T[i].var = var2;
+            printf("%s T[%d].var @0x%x (%d) %d%s\n", KMAG, i, &(T[i]), sizeof(TRow), T[i].var, KEND);
             T[i].swapped = true;
 		    if (T[i].low < numTRows && T[i].low > 1 && T[T[i].low].var == var2) {
 		        T[T[i].low].var = var1;
@@ -816,8 +847,11 @@ void swap (t_blif_cubical_function *f, int var1, int var2, TRow *localT, TRow *T
 		        T[T[i].high].swapped = true;
 		        //printf("mod - T[%d].low <= %d\n", T[i].high, table[1]);
 		    }
+            printf("%sNormal Table after swap has %d rows:%s\n", BGRN, numValidRows(T), KEND);
+            printTTable(T, f);
             simplifyTable(T);
-            printf("%sSimplified Table after swap:%s\n", BRED, KEND);
+            printf("%sSimplified Table after swap has %d rows:%s\n", BRED, numValidRows(T), KEND);
+            printTTable(T, f);
 
             // TODO BOOKMARK start coding here:
             // The issue is that somehow the update is not correct and we have entries looping back onto itself
@@ -826,7 +860,6 @@ void swap (t_blif_cubical_function *f, int var1, int var2, TRow *localT, TRow *T
         }
     }
 
-    printTTable(T, f);
 
     //=====================================================
     // [1] Set the table to reflect the variable swap
@@ -850,6 +883,7 @@ void swap (t_blif_cubical_function *f, int var1, int var2, TRow *localT, TRow *T
     //=====================================================
     // [3] Modify the local T table after finding optimal pos
     //=====================================================
+    return numValidRows(T);
 
 }
 
@@ -890,20 +924,6 @@ int sift(t_blif_cubical_function *f)
     TRow *localT = (TRow*) malloc (INIT_SIZE * sizeof(TRow));
     int numlocalTRows = numTRows;
 
-/*
-    printf("=====================================\n");
-    printf("Original T Table:\n");
-    printf("|u\t|var\t|low\t|high\n");
-    printf("|0\t|\n");
-    printf("|1\t|\n");
-    for (i = 2; i < numTRows; i++) {
-        //localT[i].var = T[i].var;
-        //localT[i].low = T[i].low;
-        //localT[i].high = T[i].high;
-        printf("|%d\t|x%d\t|%d\t|%d\n", i, T[i].var, T[i].low, T[i].high);
-    }
-    printf("=====================================\n");
-*/
     printTTable(T, f);
 
     //=====================================================
@@ -928,8 +948,10 @@ int sift(t_blif_cubical_function *f)
         //     positions to find the position of minimum cost
         //=====================================================
         int count = 0;
+        int newNumTRows;
         for (varJidx = varIidx + 1; varJidx < numInputs; varJidx++) { // swap downward
-            swap(f, varOrder[varIidx], varOrder[varJidx], localT, T);
+            newNumTRows = swap(f, varOrder[varIidx], varOrder[varJidx], localT, T);
+            printf("%snewNumTRows = %d%s\n", BYEL, newNumTRows, KEND);
             count++;
             // update varOrder array
             int tmp = varOrder[varIidx];
@@ -938,12 +960,12 @@ int sift(t_blif_cubical_function *f)
             printVarOrder(varOrder, numInputs);
             varIidx++;
             //printTTable(T, f);
-            if (count == 2) return getRootNode(T, varOrder); // TODO Remove
         }
-/*
+
         if (reverse) {
             for (; varJidx >= 0; varJidx--) { // swap upward back to beginning
-                swap(varOrder[varIidx], varOrder[varJidx], localT, T);
+                newNumTRows = swap(f, varOrder[varIidx], varOrder[varJidx], localT, T);
+                printf("%sReverse newNumTRows = %d%s\n", BYEL, newNumTRows, KEND);
                 // update varOrder array
                 int tmp = varOrder[varIidx];
                 varOrder[varIidx] = varOrder[varJidx];
@@ -952,7 +974,9 @@ int sift(t_blif_cubical_function *f)
                 varIidx--;
             }
         }
-*/
+
+        printTTable(T, f);
+
         //=====================================================
         // [4] Move variable i to optimal position
         //=====================================================
@@ -1060,7 +1084,7 @@ int main(int argc, char* argv[])
             //=====================================================
             // [4] output to dot file
             //=====================================================
-            printDOTfromNode(circuit->primary_inputs, index, rNodeIdx);
+            printDOTfromNode(circuit->primary_inputs, index, outRoot[index]);
             if(function->cube_count == 0)
                printf("%sWarning: No cubes in function! Skipping...\n%s", BYEL, KEND); 
 		}
