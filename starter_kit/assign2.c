@@ -780,11 +780,9 @@ void resetSwapped(TRow *T) {
 // Swap the variables inputs[var1] and inputs[var2] order in the T table
 // TODO need to handle when an entry for var1 DNE in T table
 // TODO handle switching the references to var1 in previous entries
-int swap (t_blif_cubical_function *f, int var1, int var2, TRow *localT, TRow *T) {
+int swap (t_blif_cubical_function *f, int var1, int var2, TRow *T) {
     resetSwapped(T);
-    printf("%sSWAP%s: %d <=> %d\n", BRED, KEND, var1, var2);
-
-    int swapTmp = 0;
+    //printf("%sSWAP%s: %d <=> %d\n", BRED, KEND, var1, var2);
 
     int i;
     int table[4] = {-1, -1, -1, -1};
@@ -885,7 +883,6 @@ int getPos(int *array, int val, int size) {
     for (i = 0; i < size; i++) {
         if (array[i] > val) break;
     }
-    printf("\tgetPos of %d -> %d\n", val, i);
     return i;
 }
 
@@ -902,7 +899,6 @@ void cleanUpTable() {
     newT[1].high = -1;
     int newNumTRows = 2;
     int numInvalidRows = numTRows - numValidRows(T);
-    printf("\tThere are %d invalid rows\n", numInvalidRows);
 
     int *invalidRows = (int *) malloc (numInvalidRows * sizeof(int));
 
@@ -911,16 +907,14 @@ void cleanUpTable() {
         //if (T[i].low < 0 || T[i].low >= numTRows || T[i].high < 0 || T[i].high >= numTRows) {
         if (T[i].low == -1 || T[i].high == -1) {
             invalidRows[numInvalid++] = i; // invalid entry
-            printf("\t\tINVALID [%d] = %d\n", numInvalid, i);
         } else {
-            printf("\t\tl %d\n", getPos(invalidRows, T[i].low, numInvalid));
             newT[newNumTRows].var = T[i].var;
             newT[newNumTRows].low = T[i].low - getPos(invalidRows, T[i].low, numInvalid);
-            printf("\t\th %d\n", getPos(invalidRows, T[i].high, numInvalid));
             newT[newNumTRows].high = T[i].high - getPos(invalidRows, T[i].high, numInvalid);
             newNumTRows++;
         }
     }
+    free(T);
     T = newT;
     numTRows = newNumTRows;
     return;
@@ -936,15 +930,15 @@ int sift(t_blif_cubical_function *f)
 {
     // Given the T table containing the current BDD, perform sifting
     // to find the BDD which contains the minimal number of nodes
-    int i, j;
+    int i;
 
     //=====================================================
     // [1] Need a local copy of the T table
     //=====================================================
-    TRow *localT = (TRow*) malloc (INIT_SIZE * sizeof(TRow));
-    int numlocalTRows = numTRows;
-
+    printf("%sOriginal T Table pre-sifting%s\n", BRED, KEND);
+    printf("%s", BWHT);
     printTTable(T, f);
+    printf("%s", KEND);
 
     //=====================================================
     // [2] For each variable, swap with every other
@@ -969,10 +963,10 @@ int sift(t_blif_cubical_function *f)
         //=====================================================
         int count = 0;
         int minNumTRows = numValidRows(T);
-        printf("%sORIGINAL numTRows = %d %s\n", BWHT, minNumTRows, KEND);
+        //printf("%sORIGINAL numTRows = %d %s\n", BWHT, minNumTRows, KEND);
         int optPos = varIidx;
         for (varJidx = varIidx + 1; varJidx < numInputs; varJidx++) { // swap downward
-            int tmpTRows = swap(f, varOrder[varIidx], varOrder[varJidx], localT, T);
+            int tmpTRows = swap(f, varOrder[varIidx], varOrder[varJidx], T);
             count++;
             // update varOrder array
             int tmp = varOrder[varIidx];
@@ -980,7 +974,7 @@ int sift(t_blif_cubical_function *f)
             varOrder[varJidx] = tmp;
             //printVarOrder(varOrder, numInputs);
             varIidx++;
-            printf("%sNumber of rows in table after swap = %d/%d [%d] %s\n", BWHT, tmpTRows, minNumTRows, varIidx, KEND);
+            //printf("%sNumber of rows in table after swap = %d/%d [%d] %s\n", BWHT, tmpTRows, minNumTRows, varIidx, KEND);
             if (tmpTRows < minNumTRows) {
                 minNumTRows = tmpTRows;
                 optPos = varIidx;
@@ -989,14 +983,14 @@ int sift(t_blif_cubical_function *f)
 
         if (reverse) {
             for (varJidx-=2; varJidx >= 0; varJidx--) { // swap upward back to beginning
-                int tmpTRows = swap(f, varOrder[varJidx], varOrder[varIidx], localT, T);
+                int tmpTRows = swap(f, varOrder[varJidx], varOrder[varIidx], T);
                 // update varOrder array
                 int tmp = varOrder[varIidx];
                 varOrder[varIidx] = varOrder[varJidx];
                 varOrder[varJidx] = tmp;
                 //printVarOrder(varOrder, numInputs);
                 varIidx--;
-                printf("%sNumber of rows in table after reverse swap = %d/%d [%d] %s\n", BWHT, tmpTRows, minNumTRows, varIidx, KEND);
+                //printf("%sNumber of rows in table after reverse swap = %d/%d [%d] %s\n", BWHT, tmpTRows, minNumTRows, varIidx, KEND);
                 if (tmpTRows < minNumTRows) {
                     minNumTRows = tmpTRows;
                     optPos = varIidx;
@@ -1006,9 +1000,9 @@ int sift(t_blif_cubical_function *f)
             //=====================================================
             // [4] Move variable i to optimal position
             //=====================================================
-            printf("%sOPTIMAL POSITION for variable %d = %d %s\n", BWHT, i, optPos, KEND);
+            //printf("%sOPTIMAL POSITION for variable %d = %d %s\n", BWHT, i, optPos, KEND);
             for (varJidx = varIidx + 1; varJidx <= optPos; varJidx++) { // Start with var i at pos 0
-                swap(f, varOrder[varIidx], varOrder[varJidx], localT, T);
+                swap(f, varOrder[varIidx], varOrder[varJidx], T);
                 // update varOrder array
                 int tmp = varOrder[varIidx];
                 varOrder[varIidx] = varOrder[varJidx];
@@ -1020,9 +1014,9 @@ int sift(t_blif_cubical_function *f)
             //=====================================================
             // [4] Move variable i to optimal position
             //=====================================================
-            printf("%s OPTIMAL POSITION for variable %d = %d %s\n", BWHT, i, optPos, KEND);
+            //printf("%s OPTIMAL POSITION for variable %d = %d %s\n", BWHT, i, optPos, KEND);
             for (varJidx-=2; varJidx >= optPos; varJidx--) { // Start with var i at pos end
-                swap(f, varOrder[varJidx], varOrder[varIidx], localT, T);
+                swap(f, varOrder[varJidx], varOrder[varIidx], T);
                 // update varOrder array
                 int tmp = varOrder[varIidx];
                 varOrder[varIidx] = varOrder[varJidx];
@@ -1032,17 +1026,17 @@ int sift(t_blif_cubical_function *f)
             }
         }
 
-        printf("Simplified Table after sifting variable %d has %d rows:\n", i, numValidRows(T));
-        printTTable(T, f);
+        //printf("Simplified Table after sifting variable %d has %d rows:\n", i, numValidRows(T));
+        //printTTable(T, f);
 
-        printVarOrder(varOrder, numInputs);
+        //printVarOrder(varOrder, numInputs);
     }
 
     //=====================================================
     // [5] Copy the local T table back into the T table
     //=====================================================
-    //TODO TODO TODO TODO TODO Need to clean up the T table => remove the -1 rows 
     cleanUpTable();
+    printf("%sFinal T Table post-sifting%s\n", BRED, KEND);
     printf("%s", BWHT);
     printTTable(T, f);
     printf("%s", KEND);
@@ -1202,15 +1196,15 @@ int main(int argc, char* argv[])
                 outRoot[index] = build(function->set_of_cubes, 
                         function->cube_count, 0, function->value);
 
-                printf("Before sifting, there are %d rows in T\n", numTRows);
+                printf("%sBefore sifting, there are %d rows in T%s\n", BWHT, numTRows, KEND);
                 if (doSift) tmp = sift(function);
-                printf("After sifting, there are %d rows in T\n", numTRows);
+                printf("%sAfter sifting, there are %d rows in T%s\n", BWHT, numTRows, KEND);
             }
 
             if (doSift) rNodeIdx = tmp;
             else rNodeIdx = numTRows - 1;
 
-            printf("%sRoot Node%s %d\n", KGRN, KEND, rNodeIdx);
+            //printf("%sRoot Node%s %d\n", KGRN, KEND, rNodeIdx);
 
             //=====================================================
             // [4] output to dot file
