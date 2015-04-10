@@ -914,7 +914,6 @@ int sift(t_blif_cubical_function *f)
     for (i = 0; i < numInputs; i++) {
         varIidx = findVarOrderIdx(varOrder, i, numInputs);
         bool reverse = (varIidx == 0) ? false : true; // Need to reverse to the beginning if did not start there
-        printf("%sORIGINAL numTRows = %d %s\n", BWHT, numTRows, KEND);
         // i is the variable number
 
         //=====================================================
@@ -923,10 +922,10 @@ int sift(t_blif_cubical_function *f)
         //=====================================================
         int count = 0;
         int minNumTRows = numValidRows(T);
-        int optPos = 0;
+        printf("%sORIGINAL numTRows = %d %s\n", BWHT, minNumTRows, KEND);
+        int optPos = i;
         for (varJidx = varIidx + 1; varJidx < numInputs; varJidx++) { // swap downward
             int tmpTRows = swap(f, varOrder[varIidx], varOrder[varJidx], localT, T);
-            printf("%sNumber of rows in table after swap = %d %s\n", BWHT, tmpTRows, KEND);
             count++;
             // update varOrder array
             int tmp = varOrder[varIidx];
@@ -934,6 +933,7 @@ int sift(t_blif_cubical_function *f)
             varOrder[varJidx] = tmp;
             //printVarOrder(varOrder, numInputs);
             varIidx++;
+            printf("%sNumber of rows in table after swap = %d/%d [%d] %s\n", BWHT, tmpTRows, minNumTRows, varIidx, KEND);
             if (tmpTRows < minNumTRows) {
                 minNumTRows = tmpTRows;
                 optPos = varIidx;
@@ -943,13 +943,13 @@ int sift(t_blif_cubical_function *f)
         if (reverse) {
             for (varJidx-=2; varJidx >= 0; varJidx--) { // swap upward back to beginning
                 int tmpTRows = swap(f, varOrder[varJidx], varOrder[varIidx], localT, T);
-                printf("%sNumber of rows in table after reverse swap = %d %s\n", BWHT, tmpTRows, KEND);
                 // update varOrder array
                 int tmp = varOrder[varIidx];
                 varOrder[varIidx] = varOrder[varJidx];
                 varOrder[varJidx] = tmp;
                 //printVarOrder(varOrder, numInputs);
                 varIidx--;
+                printf("%sNumber of rows in table after reverse swap = %d/%d [%d] %s\n", BWHT, tmpTRows, minNumTRows, varIidx, KEND);
                 if (tmpTRows < minNumTRows) {
                     minNumTRows = tmpTRows;
                     optPos = varIidx;
@@ -974,7 +974,7 @@ int sift(t_blif_cubical_function *f)
             // [4] Move variable i to optimal position
             //=====================================================
             printf("%s OPTIMAL POSITION for variable %d = %d %s\n", BWHT, i, optPos, KEND);
-            for (varJidx-=2; varJidx > optPos; varJidx--) { // Start with var i at pos end
+            for (varJidx-=2; varJidx >= optPos; varJidx--) { // Start with var i at pos end
                 swap(f, varOrder[varJidx], varOrder[varIidx], localT, T);
                 // update varOrder array
                 int tmp = varOrder[varIidx];
@@ -988,6 +988,7 @@ int sift(t_blif_cubical_function *f)
         printf("Simplified Table after sifting variable %d has %d rows:\n", i, numValidRows(T));
         printTTable(T, f);
 
+        printVarOrder(varOrder, numInputs);
     }
 
     //=====================================================
