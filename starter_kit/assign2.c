@@ -940,10 +940,13 @@ int swap(t_blif_cubical_function *f, int var1, int var2, TRow *T) {
 
             simplifyTable();
             cleanUpTable();
-            if (debug) printf("%sSimplified Table after swap has %d rows:%s\n", BRED, numValidRows(T), KEND);
-            if (debug) printTTable(T, f);
+            //if (debug) printf("%sSimplified Table after swap has %d rows:%s\n", BRED, numValidRows(T), KEND);
+            //if (debug) printTTable(T, f);
         }
     }
+
+    if (debug) printf("%sSimplified Table after swap has %d rows:%s\n", BRED, numValidRows(T), KEND);
+    if (debug) printTTable(T, f);
 
     return numValidRows(T);
 }
@@ -1019,9 +1022,6 @@ int sift(t_blif_cubical_function *f, t_blif_logic_circuit *circuit, int index)
                 minNumTRows = tmpTRows;
                 optPos = varIidx;
             }
-            simplifyTable();
-            cleanUpTable();
-            if (debug) printTTable(T, f);
             if (debug) printDOTfromNode(circuit->primary_inputs, getRootNode(T, varOrder), circuit->primary_outputs[index]->data.name, ++version);
         }
 
@@ -1046,9 +1046,6 @@ int sift(t_blif_cubical_function *f, t_blif_logic_circuit *circuit, int index)
                     minNumTRows = tmpTRows;
                     optPos = varIidx;
                 }
-                simplifyTable();
-                cleanUpTable();
-                if (debug) printTTable(T, f);
                 if (debug) printDOTfromNode(circuit->primary_inputs, getRootNode(T, varOrder), circuit->primary_outputs[index]->data.name, ++version);
             }
         }
@@ -1072,7 +1069,6 @@ int sift(t_blif_cubical_function *f, t_blif_logic_circuit *circuit, int index)
                 varOrder[varJidx] = tmp;
                 //printVarOrder(varOrder, numInputs);
                 varIidx--;
-                //cleanUpTable();
                 //printTTable(T, f);
             }
         } else if (optPos > findVarOrderIdx(varOrder, i, numInputs)) {
@@ -1086,7 +1082,6 @@ int sift(t_blif_cubical_function *f, t_blif_logic_circuit *circuit, int index)
                 varOrder[varJidx] = tmp;
                 //printVarOrder(varOrder, numInputs);
                 varIidx++;
-                //cleanUpTable();
                 //printTTable(T, f);
             }
 
@@ -1100,7 +1095,7 @@ int sift(t_blif_cubical_function *f, t_blif_logic_circuit *circuit, int index)
         memcpy(copyT, T, numTRows * sizeof(TRow));
 
         //printDOTfromNode(circuit->primary_inputs, getRootNode(T, varOrder), circuit->primary_outputs[index]->data.name, i+1);
-        //cleanUpTable();
+        cleanUpTable();
         
         //printf("Simplified Table after sifting variable %d has %d rows:\n", i, numValidRows(T));
         //printTTable(T, f);
@@ -1112,6 +1107,7 @@ int sift(t_blif_cubical_function *f, t_blif_logic_circuit *circuit, int index)
     // [5] Copy the local T table back into the T table
     //=====================================================
     //printTTable(T, f);
+    simplifyTable();
     cleanUpTable();
     printf("%sFinal T Table post-sifting%s\n", BRED, KEND);
     printf("%s", BWHT);
@@ -1199,7 +1195,7 @@ int main(int argc, char* argv[])
     doSift = 0;
 
     int opt;
-    while((opt = getopt(argc, argv, "as")) != -1)
+    while((opt = getopt(argc, argv, "asd")) != -1)
     {
         switch(opt)
         {
@@ -1209,10 +1205,14 @@ int main(int argc, char* argv[])
             case 's':
                 doSift = 1;
                 break;
+            case 'd':
+                debug = true;
+                break;
             default:
                 fprintf(stderr, "Usage: %s %s [-a] [-s]\n", argv[0], argv[1]);
                 fprintf(stderr, "\t-a\tEnables Apply operation\n");
                 fprintf(stderr, "\t-s\tEnables sifting\n");
+                fprintf(stderr, "\t-d\tEnables debug mode\n");
                 exit(EXIT_FAILURE);
         }
     }
