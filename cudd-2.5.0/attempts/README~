@@ -1,0 +1,4 @@
+This folder contains the attempts to use CUDD package
+- place the assign2 and test folder in cudd-2.5.0 directory
+- assign2 folder is a version based off of the nanotrav example
+- test folder is a simple program that attempts to perform: f=a+b g=!(cd) h=fg

@@ -1,0 +1,13 @@
+This folder contains the attempts to use CUDD package
+- place the assign2 and test folder in cudd-2.5.0 directory
+
+assign2 folder 
+- this is a version based off of the nanotrav example
+- type make to compile
+- to run: ./nanotrav -p 1 -second node21_2.blif node21_1.blif
+
+test folder 
+- this is a simple program that attempts to perform: f=a+b g=!(cd) h=fg
+- to compile: gcc bdd.c -o bdd -I ../include/ -L ../cudd/ -L ../util/ -L ../mtr/ -L ../st/ -L ../epd/ -lcudd -lutil -lepd -lmtr -lst -lm
+- to run: ./bdd
+

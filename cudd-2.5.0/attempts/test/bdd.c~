@@ -1,0 +1,191 @@
+#include <stdio.h>
+
+/* Files included from CUDD package */
+#include "util.h"
+#include "cudd.h"
+
+#define AND  100
+#define OR   101
+#define XOR  102
+#define NAND 103
+#define NOR  104
+#define XNOR 105
+DdNode *perfOp(int op, DdNode *f, DdNode *g, DdManager *dd)
+{
+    if(AND == op)
+        return Cudd_bddAnd(dd, f, g);
+    if(OR == op)
+        return Cudd_bddOr(dd, f, g);
+    if(XOR == op)
+        return Cudd_bddXor(dd, f, g);
+    if(NAND == op)
+        return Cudd_bddNand(dd, f, g);
+    if(NOR == op)
+        return Cudd_bddNor(dd, f, g);
+    if(XNOR == op)
+        return Cudd_bddXnor(dd, f, g);
+}
+
+DdNode *APPLY(int op, DdNode *f, DdNode *g, DdManager *dd)
+{
+    DdNode *one, *zero;
+    one = Cudd_ReadOne(dd);
+    Cudd_Ref(one);
+    zero = Cudd_Not(one);
+
+    DdNode *rf = Cudd_Regular(f);
+    DdNode *rg = Cudd_Regular(g);
+    //int fIdx = (rf==one || rf==zero)?(-1):(rf->index);
+    //int gIdx = (rg==one || rg==zero)?(-1):(rg->index);
+    int fIdx = (rf->index);
+    int gIdx = (rg->index);
+
+    if((rf==one || rf==zero) && (rg==one || rg==zero))
+    {
+        return perfOp(op, rf, rg, dd);
+    }
+    else if(fIdx == gIdx)
+    {
+        DdNode *low = APPLY(op, rf->type.kids.E, rg->type.kids.E, dd);
+        DdNode *high = APPLY(op, rf->type.kids.T, rg->type.kids.T, dd);
+        DdNode *u = Cudd_bddIte(dd, rf, high, low);
+        Cudd_Ref(u);
+        return u;
+    }
+    else if(fIdx < gIdx) 
+    {
+        DdNode *low = APPLY(op, rf->type.kids.E, rg, dd);
+        DdNode *high = APPLY(op, rf->type.kids.T, rg, dd);
+        DdNode *u = Cudd_bddIte(dd, rf, high, low);
+        Cudd_Ref(u);
+        return u;
+    }
+    else
+    {
+        DdNode *low = APPLY(op, rf, rg->type.kids.E, dd);
+        DdNode *high = APPLY(op, rf, rg->type.kids.T, dd);
+        DdNode *u = Cudd_bddIte(dd, rg, high, low);
+        Cudd_Ref(u);
+        return u;
+    }
+}
+
+int main(int argv, char ** argc) {
+
+  DdManager *manager;
+  DdNode * f;
+  DdNode * g;
+  DdNode * x[4];
+  DdNode * y[4];
+  int i;
+  DdNode * tmp1;
+  DdNode * tmp2;
+  FILE * fp;
+  char * names[8] = { "x1", "x2", "x3", "x4", "y1", "y2", "y3", "y4" };
+  int order[8];    
+
+  /* Initialize the bdd manager with default options */
+  manager = Cudd_Init(0,0,CUDD_UNIQUE_SLOTS,CUDD_CACHE_SLOTS,0);
+
+  
+  /* each new variable is put at the new of the current order */
+  for(i=0;i<4;i++) {
+    x[i] = Cudd_bddNewVar(manager);
+  }
+
+  for(i=0;i<4;i++) {
+    y[i] = Cudd_bddNewVar(manager);
+  }
+
+
+  /* ordering = x1 < x2 < x3 < x4 < y1 < y2 < y3 < y4 */
+
+  f = Cudd_ReadOne(manager);
+  Cudd_Ref(f);                      /* Explicit Reference */
+
+
+  tmp1 = Cudd_bddOr(manager,x[0],x[1]);  
+  Cudd_Ref(tmp1);
+  tmp2 = Cudd_bddAnd(manager,f,tmp1);
+  Cudd_Ref(tmp2);
+
+  //Cudd_RecursiveDeref(manager,f);                 /* Explicit Dereference */
+  //Cudd_RecursiveDeref(manager,tmp1);
+
+  f = tmp2;
+
+
+  g = Cudd_ReadOne(manager);
+  Cudd_Ref(g);                      /* Explicit Reference */
+
+
+  tmp1 = Cudd_bddOr(manager,x[2],x[3]);  
+  Cudd_Ref(tmp1);
+  tmp2 = Cudd_bddAnd(manager,g,tmp1);
+  Cudd_Ref(tmp2);
+
+  //Cudd_RecursiveDeref(manager,g);                 /* Explicit Dereference */
+  //Cudd_RecursiveDeref(manager,tmp1);
+
+  g = tmp2;
+
+  /* dumping bdd in dot format */
+  fp = fopen("bdddump","w");
+  Cudd_DumpDot(manager,1,&f,(char **)names,NULL,fp);
+  fclose(fp);
+  
+  printf("Number of Nodes = %d\n",Cudd_DagSize(f));
+
+  fp = fopen("bdddump1","w");
+  Cudd_DumpDot(manager,1,&g,(char **)names,NULL,fp);
+  fclose(fp);
+  
+  printf("Number of Nodes = %d\n",Cudd_DagSize(g));
+  
+  DdNode *h = APPLY(AND, f, g, manager);
+
+  fp = fopen("bdddump2","w");
+  Cudd_DumpDot(manager,1,&h,(char **)names,NULL,fp);
+  fclose(fp);
+
+  printf("Number of Nodes = %d\n",Cudd_DagSize(h));
+
+//  /* xi and yi are put together in order */
+//  for(i=0;i<4;i= i++) {
+//    order[2* i] = i;
+//    order[2* i + 1] = i + 4;
+//  }
+//  
+//  /* shuffle to new order */
+//  Cudd_ShuffleHeap(manager,order);
+  
+  
+  
+//  printf("Number of Nodes After Shuffling = %d\n",Cudd_DagSize(f));
+
+  Cudd_RecursiveDeref(manager,f);
+  Cudd_Quit(manager);    /* Release Manager */
+
+  return 0;
+}
+
+
+/* 
+   CUDD package location: http://vlsi.colorado.edu/~fabio/CUDD/
+   Extensive Documentation
+   
+   Dot Package for viewing bdds: http://www.graphviz.org/
+
+*/
+
+
+/* Compiling this program
+
+Filename: bdd.c
+Cudd Location: ../cudd-2.4.0
+
+Command:
+gcc bdd.c -o bdd -I ../include/ -L ../cudd/ -L ../util/ -L ../mtr/ -L ../st/ -L ../epd/ -lcudd -lutil -lepd -lmtr -lst -lm
+
+*/
+
