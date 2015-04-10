@@ -122,13 +122,19 @@ void printSubGraph(t_blif_signal **inputs, FILE *fp, int u, bool *printed)
     printed[u] = true;
 }
 
-void printDOTfromNode(t_blif_signal **inputs, int rootNode, char *bddName)
+void printDOTfromNode(t_blif_signal **inputs, int rootNode, char *bddName, int version)
 {
     printf("there are %d inputs and %d nodes in total\n", numInputs, numTRows);
 
     FILE *fp;
     char fileName[50]; // should be more than enough
-    sprintf(fileName, "%s.dot", bddName);
+    if (version == 0) {
+        sprintf(fileName, "%s.dot", bddName);
+    } else if (version == -1) {
+        sprintf(fileName, "%s_nosift.dot", bddName);
+    } else {
+        sprintf(fileName, "%s_%d.dot", bddName, version);
+    }
     fp = fopen(fileName, "w+");
 
     //temp bool to keep track of whether a node has been printed or not
@@ -726,13 +732,15 @@ int translateOp(char* op)
 
 
 // Remove the idx-th entry from the T table
-void removeTableEntry (TRow *T, int idx, int newIdx) {
+void removeTableEntry1 (int idx, int newIdx) {
     int i;
     for (i = 2; i < numTRows; i++) {
         if (T[i].low == idx) {
+            assert(i != newIdx);
             T[i].low = newIdx;
         }
         if (T[i].high == idx) {
+            assert(i != newIdx);
             T[i].high = newIdx;
         }
     }
@@ -740,18 +748,31 @@ void removeTableEntry (TRow *T, int idx, int newIdx) {
 }
 
 // Simplify the entries in the T table
-// An entry can be simplified if both the low and high entries are the same
-void simplifyTable (TRow *T) {
-    int i;
+// 1) An entry can be simplified if both the low and high entries are the same
+// 2) Also, if both entries have the save var, low, and high, remove one of the entries
+void simplifyTable () {
+    int i, j;
+    // 1)
     for (i = 2; i < numTRows; i++) {
         if (T[i].low < 0 || T[i].low > numTRows || T[i].high < 0 || T[i].high > numTRows) continue;
         if (T[i].low == T[i].high && T[i].low >= 0) {
-            //printf("Redundant entry: %d|%d|%d|%d|\n", i, T[i].var, T[i].low, T[i].high);
-            removeTableEntry(T, i, T[i].low);
+            //printf("Redundant entry: %d\t|%d|%d|%d|\n", i, T[i].var, T[i].low, T[i].high);
+            removeTableEntry1(i, T[i].low);
 
             // Set low and high entries to -1 to signify that it is invalid
             T[i].low = -1;
             T[i].high = -1;
+        }
+    }
+
+    // 2)
+    for (i = 2; i < numTRows; i++) {
+        for (j = i + 1; j < numTRows; j++) {
+            if ((T[i].var == T[j].var) && (T[i].low == T[j].low) && (T[i].high == T[j].high)) {
+                removeTableEntry1(j, i);
+                T[j].low = -1;
+                T[j].high = -1;
+            }
         }
     }
     return;
@@ -776,11 +797,80 @@ void resetSwapped(TRow *T) {
     }
 }
 
+void printVarOrder (int *varOrder, int size) {
+    int i;
+    printf("Variable Ordering ");
+    for (i = 0; i < size; i++) {
+        printf("%s%d%s\t", KBLU, varOrder[i], KEND);
+    }
+    printf("\n");
+}
+
+
+int getRootNode (TRow *T, int* varOrder) {
+    int i, j;
+    for (i = 0; i < numInputs; i++) {
+        for (j = 0; j < numTRows; j++) {
+            if (T[j].var == varOrder[i]) return j;
+        }
+    }
+    assert(0);
+}
+
+
+int getPos(int *array, int val, int size) {
+    int i;
+    for (i = 0; i < size; i++) {
+        if (array[i] > val) break;
+    }
+    return i;
+}
+
+// cleanup the T Table
+void cleanUpTable() {
+    int i;
+    TRow *newT = (TRow*) malloc (INIT_SIZE * sizeof(TRow));
+    // initialize value for the terminal nodes
+    newT[0].var = totalNumInputs; // terminal node 0
+    newT[0].low = -1;
+    newT[0].high = -1;
+    newT[1].var = totalNumInputs; // terminal node 1
+    newT[1].low = -1;
+    newT[1].high = -1;
+    int newNumTRows = 2;
+    int numInvalidRows = numTRows - numValidRows(T);
+
+    int *invalidRows = (int *) malloc (numInvalidRows * sizeof(int));
+
+    int numInvalid = 0;
+    for (i = 2; i < numTRows; i++) {
+        //if (T[i].low < 0 || T[i].low >= numTRows || T[i].high < 0 || T[i].high >= numTRows) {
+        if (T[i].low == -1 || T[i].high == -1) {
+            invalidRows[numInvalid++] = i; // invalid entry
+        }
+    }
+
+    for (i = 2; i < numTRows; i++) {
+        if (T[i].low != -1 && T[i].high != -1) {
+            newT[newNumTRows].var = T[i].var;
+            newT[newNumTRows].low = T[i].low - getPos(invalidRows, T[i].low, numInvalid);
+            newT[newNumTRows].high = T[i].high - getPos(invalidRows, T[i].high, numInvalid);
+            newT[newNumTRows].swapped = false;
+            newNumTRows++;
+        }
+
+    }
+
+    free(T);
+    T = newT;
+    numTRows = newNumTRows;
+    return;
+}
 
 // Swap the variables inputs[var1] and inputs[var2] order in the T table
 // TODO need to handle when an entry for var1 DNE in T table
 // TODO handle switching the references to var1 in previous entries
-int swap (t_blif_cubical_function *f, int var1, int var2, TRow *T) {
+int swap(t_blif_cubical_function *f, int var1, int var2, TRow *T) {
     resetSwapped(T);
     //printf("%sSWAP%s: %d <=> %d\n", BRED, KEND, var1, var2);
 
@@ -848,77 +938,19 @@ int swap (t_blif_cubical_function *f, int var1, int var2, TRow *T) {
 		        T[T[i].high].swapped = true;
 		    }
 
-            simplifyTable(T);
-            //printf("%sSimplified Table after swap has %d rows:%s\n", BRED, numValidRows(T), KEND);
-            //printTTable(T, f);
+            simplifyTable();
+            cleanUpTable();
+            //if (debug) printf("%sSimplified Table after swap has %d rows:%s\n", BRED, numValidRows(T), KEND);
+            //if (debug) printTTable(T, f);
         }
     }
+
+    if (debug) printf("%sSimplified Table after swap has %d rows:%s\n", BRED, numValidRows(T), KEND);
+    if (debug) printTTable(T, f);
 
     return numValidRows(T);
 }
 
-void printVarOrder (int *varOrder, int size) {
-    int i;
-    printf("Variable Ordering ");
-    for (i = 0; i < size; i++) {
-        printf("%s%d%s\t", KBLU, varOrder[i], KEND);
-    }
-    printf("\n");
-}
-
-
-int getRootNode (TRow *T, int* varOrder) {
-    int i, j;
-    for (i = 0; i < numInputs; i++) {
-        for (j = 0; j < numTRows; j++) {
-            if (T[j].var == varOrder[i]) return j;
-        }
-    }
-    assert(0);
-}
-
-
-int getPos(int *array, int val, int size) {
-    int i;
-    for (i = 0; i < size; i++) {
-        if (array[i] > val) break;
-    }
-    return i;
-}
-
-// cleanup the T Table
-void cleanUpTable() {
-    int i;
-    TRow *newT = (TRow*) malloc (INIT_SIZE * sizeof(TRow));
-    // initialize value for the terminal nodes
-    newT[0].var = totalNumInputs; // terminal node 0
-    newT[0].low = -1;
-    newT[0].high = -1;
-    newT[1].var = totalNumInputs; // terminal node 1
-    newT[1].low = -1;
-    newT[1].high = -1;
-    int newNumTRows = 2;
-    int numInvalidRows = numTRows - numValidRows(T);
-
-    int *invalidRows = (int *) malloc (numInvalidRows * sizeof(int));
-
-    int numInvalid = 0;
-    for (i = 2; i < numTRows; i++) {
-        //if (T[i].low < 0 || T[i].low >= numTRows || T[i].high < 0 || T[i].high >= numTRows) {
-        if (T[i].low == -1 || T[i].high == -1) {
-            invalidRows[numInvalid++] = i; // invalid entry
-        } else {
-            newT[newNumTRows].var = T[i].var;
-            newT[newNumTRows].low = T[i].low - getPos(invalidRows, T[i].low, numInvalid);
-            newT[newNumTRows].high = T[i].high - getPos(invalidRows, T[i].high, numInvalid);
-            newNumTRows++;
-        }
-    }
-    free(T);
-    T = newT;
-    numTRows = newNumTRows;
-    return;
-}
 
 
 //---------------------------------------------------------------------
@@ -926,7 +958,7 @@ void cleanUpTable() {
 // Performs the sifting procedure to try to find the minimal sized BDD
 // Returns the new index of the root node
 //---------------------------------------------------------------------
-int sift(t_blif_cubical_function *f)
+int sift(t_blif_cubical_function *f, t_blif_logic_circuit *circuit, int index)
 {
     // Given the T table containing the current BDD, perform sifting
     // to find the BDD which contains the minimal number of nodes
@@ -940,19 +972,30 @@ int sift(t_blif_cubical_function *f)
     printTTable(T, f);
     printf("%s", KEND);
 
+    TRow *copyT = (TRow *) malloc (INIT_SIZE * sizeof(TRow));
+    memcpy(copyT, T, numTRows * sizeof(TRow));
+
     //=====================================================
     // [2] For each variable, swap with every other
     //     variable to find the optimal placement
     //=====================================================
     int *varOrder = (int *) malloc (numInputs * sizeof(int));
+    int *copyVarOrder = (int *) malloc (numInputs * sizeof(int));
     for (i = 0; i < numInputs; i++) {
         varOrder[i] = f->inputs[i]->data.index; // initial ordering
     }
 
     //printVarOrder(varOrder, numInputs);
 
+    int copyNumTRows;
     int varIidx, varJidx;
+    int version = 0;
     for (i = 0; i < numInputs; i++) {
+        copyNumTRows = numTRows;
+        int minNumTRows = numValidRows(T);
+        memcpy(copyVarOrder, varOrder, numInputs * sizeof(int));
+        //printVarOrder(varOrder, numInputs);
+        //printVarOrder(copyVarOrder, numInputs);
         varIidx = findVarOrderIdx(varOrder, i, numInputs);
         bool reverse = (varIidx == 0) ? false : true; // Need to reverse to the beginning if did not start there
         // i is the variable number
@@ -962,10 +1005,10 @@ int sift(t_blif_cubical_function *f)
         //     positions to find the position of minimum cost
         //=====================================================
         int count = 0;
-        int minNumTRows = numValidRows(T);
-        //printf("%sORIGINAL numTRows = %d %s\n", BWHT, minNumTRows, KEND);
+        //printf("%s\tORIGINAL numTRows = %d %s\n", BWHT, minNumTRows, KEND);
         int optPos = varIidx;
-        for (varJidx = varIidx + 1; varJidx < numInputs; varJidx++) { // swap downward
+        // Forward swap >>>>
+        for (varJidx = varIidx + 1; varJidx < numInputs; varJidx++) {
             int tmpTRows = swap(f, varOrder[varIidx], varOrder[varJidx], T);
             count++;
             // update varOrder array
@@ -979,10 +1022,20 @@ int sift(t_blif_cubical_function *f)
                 minNumTRows = tmpTRows;
                 optPos = varIidx;
             }
+            if (debug) printDOTfromNode(circuit->primary_inputs, getRootNode(T, varOrder), circuit->primary_outputs[index]->data.name, ++version);
+            if (debug) printf("Version %d - ", version);
+            if (debug) printVarOrder(varOrder, numInputs);
         }
 
+        // Restore original T table
+        numTRows = copyNumTRows;
+        memcpy(T, copyT, numTRows * sizeof(TRow));
+        memcpy(varOrder, copyVarOrder, numInputs * sizeof(int));
+        varIidx = findVarOrderIdx(varOrder, i, numInputs);
+
+        // Backward swap <<<<
         if (reverse) {
-            for (varJidx-=2; varJidx >= 0; varJidx--) { // swap upward back to beginning
+            for (varJidx=varIidx - 1; varJidx >= 0; varJidx--) { // swap upward back to beginning
                 int tmpTRows = swap(f, varOrder[varJidx], varOrder[varIidx], T);
                 // update varOrder array
                 int tmp = varOrder[varIidx];
@@ -995,27 +1048,24 @@ int sift(t_blif_cubical_function *f)
                     minNumTRows = tmpTRows;
                     optPos = varIidx;
                 }
+                if (debug) printDOTfromNode(circuit->primary_inputs, getRootNode(T, varOrder), circuit->primary_outputs[index]->data.name, ++version);
+                if (debug) printf("Version %d - ", version);
+                if (debug) printVarOrder(varOrder, numInputs);
             }
+        }
 
-            //=====================================================
-            // [4] Move variable i to optimal position
-            //=====================================================
-            //printf("%sOPTIMAL POSITION for variable %d = %d %s\n", BWHT, i, optPos, KEND);
-            for (varJidx = varIidx + 1; varJidx <= optPos; varJidx++) { // Start with var i at pos 0
-                swap(f, varOrder[varIidx], varOrder[varJidx], T);
-                // update varOrder array
-                int tmp = varOrder[varIidx];
-                varOrder[varIidx] = varOrder[varJidx];
-                varOrder[varJidx] = tmp;
-                //printVarOrder(varOrder, numInputs);
-                varIidx++;
-            }
-        } else {
-            //=====================================================
-            // [4] Move variable i to optimal position
-            //=====================================================
-            //printf("%s OPTIMAL POSITION for variable %d = %d %s\n", BWHT, i, optPos, KEND);
-            for (varJidx-=2; varJidx >= optPos; varJidx--) { // Start with var i at pos end
+        // Restore original T table
+        numTRows = copyNumTRows;
+        memcpy(T, copyT, numTRows * sizeof(TRow));
+        memcpy(varOrder, copyVarOrder, numInputs * sizeof(int));
+        varIidx = findVarOrderIdx(varOrder, i, numInputs);
+
+        //=====================================================
+        // [4] Move variable i to optimal position
+        //=====================================================
+        if (optPos < findVarOrderIdx(varOrder, i, numInputs)) {
+            //printf("%s\t-OPTIMAL POSITION for variable %d = %d %s\n", BWHT, i, optPos, KEND);
+            for (varJidx=varIidx-1; varJidx >= optPos; varJidx--) { // Start with var i at pos end
                 swap(f, varOrder[varJidx], varOrder[varIidx], T);
                 // update varOrder array
                 int tmp = varOrder[varIidx];
@@ -1023,9 +1073,34 @@ int sift(t_blif_cubical_function *f)
                 varOrder[varJidx] = tmp;
                 //printVarOrder(varOrder, numInputs);
                 varIidx--;
+                //printTTable(T, f);
             }
-        }
+        } else if (optPos > findVarOrderIdx(varOrder, i, numInputs)) {
+            //printf("%s\tOPTIMAL POSITION for variable %d = %d %s\n", BWHT, i, optPos, KEND);
+            for (varJidx=varIidx+1; varJidx <= optPos; varJidx++) { // Start with var i at pos end
+                //printVarOrder(varOrder, numInputs);
+                swap(f, varOrder[varIidx], varOrder[varJidx], T);
+                // update varOrder array
+                int tmp = varOrder[varIidx];
+                varOrder[varIidx] = varOrder[varJidx];
+                varOrder[varJidx] = tmp;
+                //printVarOrder(varOrder, numInputs);
+                varIidx++;
+                //printTTable(T, f);
+            }
 
+        }
+        if (debug) printf("%sOptimal position for variable %d is %d %s\n", BBLU, i, optPos, KEND);
+        if (debug) printVarOrder(varOrder, numInputs);
+
+        // update copyT to the best solution seen
+        //printTTable(T, f);
+        //printTTable(copyT, f);
+        memcpy(copyT, T, numTRows * sizeof(TRow));
+
+        //printDOTfromNode(circuit->primary_inputs, getRootNode(T, varOrder), circuit->primary_outputs[index]->data.name, i+1);
+        cleanUpTable();
+        
         //printf("Simplified Table after sifting variable %d has %d rows:\n", i, numValidRows(T));
         //printTTable(T, f);
 
@@ -1035,11 +1110,19 @@ int sift(t_blif_cubical_function *f)
     //=====================================================
     // [5] Copy the local T table back into the T table
     //=====================================================
+    //printTTable(T, f);
+    simplifyTable();
     cleanUpTable();
     printf("%sFinal T Table post-sifting%s\n", BRED, KEND);
     printf("%s", BWHT);
     printTTable(T, f);
     printf("%s", KEND);
+
+    free(copyT);
+    free(copyVarOrder);
+    
+    printf("%sOptimal variable ordering%s\n", BWHT, KEND);
+    printVarOrder(varOrder, numInputs);
 
     return getRootNode(T, varOrder);
 }
@@ -1091,7 +1174,7 @@ void applyPrompt(t_blif_logic_circuit *circuit, int bddNum)
         printf("Time taken for apply = %f ms\n", (((float) time2 - (float) time1)/CLOCKS_PER_SEC) * 1000);
         char bddName[50];
         sprintf(bddName, "%s_%s_%s", node1Str, opStr, node2Str);
-        printDOTfromNode(circuit->primary_inputs, applyRoot, bddName);
+        printDOTfromNode(circuit->primary_inputs, applyRoot, bddName, 0);
     }
 }
 
@@ -1119,7 +1202,7 @@ int main(int argc, char* argv[])
     doSift = 0;
 
     int opt;
-    while((opt = getopt(argc, argv, "as")) != -1)
+    while((opt = getopt(argc, argv, "asd")) != -1)
     {
         switch(opt)
         {
@@ -1129,10 +1212,14 @@ int main(int argc, char* argv[])
             case 's':
                 doSift = 1;
                 break;
+            case 'd':
+                debug = true;
+                break;
             default:
                 fprintf(stderr, "Usage: %s %s [-a] [-s]\n", argv[0], argv[1]);
                 fprintf(stderr, "\t-a\tEnables Apply operation\n");
                 fprintf(stderr, "\t-s\tEnables sifting\n");
+                fprintf(stderr, "\t-d\tEnables debug mode\n");
                 exit(EXIT_FAILURE);
         }
     }
@@ -1200,11 +1287,13 @@ int main(int argc, char* argv[])
                 outRoot[index] = build(function->set_of_cubes, 
                         function->cube_count, 0, function->value);
 
+                printDOTfromNode(circuit->primary_inputs, outRoot[index], circuit->primary_outputs[index]->data.name, -1);
                 if (doSift) {
-                    printf("%sBefore sifting, there are %d rows in T%s\n", BWHT, numTRows, KEND);
+                    int presift = numTRows;
                     clock_t time1 = clock();
-                    tmp = sift(function);
+                    tmp = sift(function, circuit, index);
                     clock_t time2 = clock();
+                    printf("%sBefore sifting, there are %d rows in T%s\n", BWHT, presift, KEND);
                     printf("%sAfter sifting, there are %d rows in T%s\n", BWHT, numTRows, KEND);
                     printf("Time taken for sifting = %f ms\n", (((float)time2 - (float)time1)/CLOCKS_PER_SEC)*1000);
                 }
@@ -1220,10 +1309,10 @@ int main(int argc, char* argv[])
             //=====================================================
             if (doSift) {
                 printDOTfromNode(circuit->primary_inputs, rNodeIdx, 
-                    circuit->primary_outputs[index]->data.name);
+                    circuit->primary_outputs[index]->data.name, 0);
             } else {
                 printDOTfromNode(circuit->primary_inputs, outRoot[index], 
-                    circuit->primary_outputs[index]->data.name);
+                    circuit->primary_outputs[index]->data.name, 0);
             }
             if(function->cube_count == 0)
                printf("%sWarning: No cubes in function! Skipping...\n%s", BYEL, KEND); 
