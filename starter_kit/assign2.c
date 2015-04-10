@@ -880,6 +880,34 @@ int getRootNode (TRow *T, int* varOrder) {
 }
 
 
+// cleanup the T Table
+void cleanUpTable(TRow *T) {
+    int i;
+    TRow *newT = (TRow*) malloc (INIT_SIZE * sizeof(TRow));
+    // initialize value for the terminal nodes
+    newT[0].var = totalNumInputs; // terminal node 0
+    newT[0].low = -1;
+    newT[0].high = -1;
+    newT[1].var = totalNumInputs; // terminal node 1
+    newT[1].low = -1;
+    newT[1].high = -1;
+    int newNumTRows = 2;
+
+    int *invalidRows = (int *) malloc ((numTRows - numValidRows(T)) * sizeof(int));
+
+    int numInvalid = 0;
+    for (i = 2; i < numTRows; i++) {
+        if (T[i].low < 0 || T[i].low >= numTRows || T[i].high < 0 || T[i].high >= numTRows) {
+            invalidRows[numInvalid++] = i; // invalid entry
+        } else {
+            newT[newNumTRows].var = T[i].var;
+            newT[newNumTRows].var = T[i].low;
+            newNumTRows++;
+        }
+    }
+}
+
+
 //---------------------------------------------------------------------
 // Sifting function
 // Performs the sifting procedure to try to find the minimal sized BDD
@@ -995,7 +1023,7 @@ int sift(t_blif_cubical_function *f)
     // [5] Copy the local T table back into the T table
     //=====================================================
     //TODO TODO TODO TODO TODO Need to clean up the T table => remove the -1 rows 
-    //TODO TODO TODO TODO TODO test 18 doesn't work!!
+    //cleanUpTable(T);
 
     return getRootNode(T, varOrder);
 }
