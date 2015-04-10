@@ -1,16 +1,18 @@
 #!/bin/bash
-end=15
+end=$1
 
-make
-for ((i=1; i<=$end; i++))
+
+for ((i=$1; i<=$end; i++))
 do
-    rm BDD*.dot
-    ./assign2 ../test_nodes/node${i}.blif
+    rm *.dot
+    rm *.ps
+    ./assign2 ../test_nodes/node${i}.blif $2 $3
     j=0
-    for file in ./*.dot
+    for file in *.dot
     do
-        echo "making node${i}_${j}.pdf $file"
-        dot -Tpdf -o node${i}_${j}.pdf $file
+        echo "making node${i}_${j}.ps $file"
+        funcName="${file%.*}"
+        dot -Tps -o node${i}_${funcName}.ps $file
         j=$((j+1))
     done
 done
