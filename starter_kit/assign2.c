@@ -15,6 +15,7 @@
 #include <assert.h>
 #include <malloc.h>
 #include <string.h>
+#include <unistd.h>
 #include "common_types.h"
 #include "blif_common.h"
 #include "cubical_function_representation.h"
@@ -121,31 +122,31 @@ void printSubGraph(t_blif_signal **inputs, FILE *fp, int u, bool *printed)
     printed[u] = true;
 }
 
-void printDOTfromNode(t_blif_signal **inputs, int BDDnum, int rootNode)
+void printDOTfromNode(t_blif_signal **inputs, int rootNode, char *bddName)
 {
     printf("there are %d inputs and %d nodes in total\n", numInputs, numTRows);
 
     FILE *fp;
     char fileName[50]; // should be more than enough
-    sprintf(fileName, "BDD%d.dot", BDDnum);
+    sprintf(fileName, "%s.dot", bddName);
     fp = fopen(fileName, "w+");
 
     //temp bool to keep track of whether a node has been printed or not
     bool *printed = (bool*) malloc (numTRows * sizeof(bool));
     memset(printed, false, numTRows * sizeof(bool));
 
-    printf("digraph BDD {\n");
-    fprintf(fp, "digraph BDD {\n"); //TODO: change this to the function name (name taken in param)
+    printf("digraph %s {\n", bddName);
+    fprintf(fp, "digraph %s {\n", bddName);
     
-    if(rootNode != 0)
-    {
-        printf("\t1 [shape=box];\n");
-        fprintf(fp, "\t1 [shape=box];\n");
-    }
     if(rootNode != 1)
     {
         printf("\t0 [shape=box];\n");
         fprintf(fp, "\t0 [shape=box];\n");
+    }
+    if(rootNode != 0)
+    {
+        printf("\t1 [shape=box];\n");
+        fprintf(fp, "\t1 [shape=box];\n");
     }
     
     printSubGraph(inputs, fp, rootNode, printed);
@@ -272,10 +273,15 @@ void clearG()
 //---------------------------------------------------------------------
 void updateGSize(int size)
 {
-    G = (int **) realloc(G, size * size * sizeof(int));
+    G = (int **) realloc(G, size * sizeof(int *));
     // initialize all value to -1 (empty)
     int i, j;
     for(i=0; i<size; i++) {
+        if(i<GThreshold)
+            G[i] = (int *) realloc(G[i], size * sizeof(int));
+        else
+            G[i] = (int *) malloc(size * sizeof(int));
+
         for(j=0; j<size; j++) {
             if((i>=GThreshold) || (j>=GThreshold))
                 G[i][j] = -1;
@@ -344,7 +350,7 @@ int add(int i, int l, int h)
 void removeNode(int i, int l, int h)
 {
 //    int u = lookup(i, l, h);
-
+// TODO
 }
 
 
@@ -369,6 +375,7 @@ int numValidRows(TRow *T)
 //---------------------------------------------------------------------
 void removeVar(int i)
 {
+    //TODO do we need this???
 }
 
 /**********************************************************************/
@@ -562,6 +569,7 @@ int build(t_blif_cube **setOfCubes, int cubeCount, int i, int literalVal)
     }
 }
 
+// TODO: do we need this???
 int res(int u, int j, int b) 
 {
     if(T[u].var > j)
@@ -993,13 +1001,61 @@ int sift(t_blif_cubical_function *f)
 }
 
 
+void applyPrompt(t_blif_logic_circuit *circuit, int bddNum)
+{
+    char applyCmd[100];
+    int op = -1;
+    int node1 = -1;
+    int node2 = -1;
+    while(1)
+    {
+        printf("Enter Apply cmd (i.e. \"f AND g\") or \"exit\":\n");
+        printf("Apply >");
+        fgets(applyCmd, 100, stdin);
+        printf("reveived: %s\n", applyCmd);
+    
+        if(!strcmp("exit\n", applyCmd))
+            break;
+    
+        // parse command
+        char *node1Str = strtok(applyCmd, " \n");
+        if(node1Str != NULL)
+            //node1 = findVar(circuit, word);
+            node1 = findOutput(circuit, node1Str);
+        char *opStr = strtok(NULL, " \n");
+        if(opStr != NULL)
+            op = translateOp(opStr);
+        char *node2Str = strtok(NULL, " \n");
+        if(node2Str != NULL)
+            //node2 = findVar(circuit, word);
+            node2 = findOutput(circuit, node2Str);
+    
+        if(op==-1 || node1==-1 || node2==-1)
+        {
+            printf("Please enter a command in the form \"f AND g\".");
+            continue;
+        }
+        else
+            printf("op=%d, node1=%d, node2=%d\n", op, node1, node2);
+        //do apply
+        clearG();
+        int applyRoot = APP(op, node1, node2);
+        printf("applyRoot=%d\n", applyRoot);
+        char bddName[50];
+        sprintf(bddName, "%s_%s_%s", node1Str, opStr, node2Str);
+        printDOTfromNode(circuit->primary_inputs, applyRoot, bddName);
+    }
+}
+
+
+
 /**********************************************************************/
 /*** MAIN FUNCTION ****************************************************/
 /**********************************************************************/
-
-
 int main(int argc, char* argv[])
 {
+    bool doApply = false;
+
 	debug = false;
 	t_blif_logic_circuit *circuit = NULL;
 
@@ -1013,9 +1069,38 @@ int main(int argc, char* argv[])
 	printf("Reading file %s...\n",argv[1]);
 	circuit = ReadBLIFCircuit(argv[1]);
     doSift = 0;
-    if (argc == 3) {
-        doSift = atoi(argv[2]);
+
+    int opt;
+    while((opt = getopt(argc, argv, "as")) != -1)
+    {
+        switch(opt)
+        {
+            case 'a':
+                doApply = true;
+                break;
+            case 's':
+                doSift = 1;
+                break;
+            default:
+                fprintf(stderr, "Usage: %s %s [-a] [-s]\n", argv[0], argv[1]);
+                fprintf(stderr, "\t-a\tEnables Apply operation\n");
+                fprintf(stderr, "\t-s\tEnables sifting\n");
+                exit(EXIT_FAILURE);
+        }
     }
+
+//    if(argc>=3)
+//    {
+//        if(!strcmp("-apply", argv[2]))
+//            doApply = true;
+//        else
+//            doSift = atoi(argv[2]);
+//    }
+//    if(argc>=4)
+//    {
+//        if(!strcmp("-apply", argv[3]))
+//            doApply = true;
+//    }
 
 	if (circuit != NULL)
 	{
@@ -1080,7 +1165,8 @@ int main(int argc, char* argv[])
             //=====================================================
             // [4] output to dot file
             //=====================================================
-            printDOTfromNode(circuit->primary_inputs, index, outRoot[index]);
+            printDOTfromNode(circuit->primary_inputs, outRoot[index], 
+                    circuit->primary_outputs[index]->data.name);
             if(function->cube_count == 0)
                printf("%sWarning: No cubes in function! Skipping...\n%s", BYEL, KEND); 
 		}
@@ -1088,47 +1174,8 @@ int main(int argc, char* argv[])
         //=====================================================
         // [5] perform Apply ops
         //=====================================================
-        char applyCmd[100];
-        int op = -1;
-        int node1 = -1;
-        int node2 = -1;
-        while(1)
-        {
-            printf("Enter Apply cmd (i.e. \"f AND g\") or \"exit\":\n");
-            printf("Apply >");
-            fgets(applyCmd, 100, stdin);
-            printf("reveived: %s\n", applyCmd);
-
-            if(!strcmp("exit\n", applyCmd))
-                break;
-
-            // parse command
-            char *word = strtok(applyCmd, " \n");
-            if(word != NULL)
-                //node1 = findVar(circuit, word);
-                node1 = findOutput(circuit, word);
-            word = strtok(NULL, " \n");
-            if(word != NULL)
-                op = translateOp(word);
-            word = strtok(NULL, " \n");
-            if(word != NULL)
-                //node2 = findVar(circuit, word);
-                node2 = findOutput(circuit, word);
-
-            if(op==-1 || node1==-1 || node2==-1)
-            {
-                printf("Please enter a command in the form \"f AND g\".");
-                continue;
-            }
-            else
-                printf("op=%d, node1=%d, node2=%d\n", op, node1, node2);
-            //do apply
-            clearG();
-            int applyRoot = APP(op, node1, node2);
-            printf("applyRoot=%d\n", applyRoot);
-            printDOTfromNode(circuit->primary_inputs, index++, applyRoot);
-// TODO: this somehow only works for the first time through.... need to fix the rest
-        }
+        if(doApply)
+            applyPrompt(circuit, index);
 
         //=====================================================
         // [6] clean up
