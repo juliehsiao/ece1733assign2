@@ -726,7 +726,7 @@ int translateOp(char* op)
 
 
 // Remove the idx-th entry from the T table
-void removeTableEntry (TRow *T, int idx, int newIdx) {
+void removeTableEntry1 (TRow *T, int idx, int newIdx) {
     int i;
     for (i = 2; i < numTRows; i++) {
         if (T[i].low == idx) {
@@ -739,19 +739,49 @@ void removeTableEntry (TRow *T, int idx, int newIdx) {
     return;
 }
 
-// Simplify the entries in the T table
-// An entry can be simplified if both the low and high entries are the same
-void simplifyTable (TRow *T) {
+
+// Remove the idx-th entry from the T table
+void removeTableEntry2 (TRow *T, int idx, int newIdx) {
     int i;
+    for (i = 2; i < numTRows; i++) {
+        if (T[i].low == idx) {
+            T[i].low = newIdx;
+        }
+        if (T[i].high == idx) {
+            T[i].high = newIdx;
+        }
+    }
+    T[idx].low = -1;
+    T[idx].high = -1;
+    return;
+}
+
+// Simplify the entries in the T table
+// 1) An entry can be simplified if both the low and high entries are the same
+// 2) Also, if both entries have the save var, low, and high, remove one of the entries
+void simplifyTable (TRow *T) {
+    int i, j;
+    // 1)
     for (i = 2; i < numTRows; i++) {
         if (T[i].low < 0 || T[i].low > numTRows || T[i].high < 0 || T[i].high > numTRows) continue;
         if (T[i].low == T[i].high && T[i].low >= 0) {
             //printf("Redundant entry: %d|%d|%d|%d|\n", i, T[i].var, T[i].low, T[i].high);
-            removeTableEntry(T, i, T[i].low);
+            removeTableEntry1(T, i, T[i].low);
 
             // Set low and high entries to -1 to signify that it is invalid
             T[i].low = -1;
             T[i].high = -1;
+        }
+    }
+
+    // 2)
+    for (i = 2; i < numTRows; i++) {
+        for (j = i + 1; j < numTRows; j++) {
+            if ((T[i].var == T[j].var) && (T[i].low == T[j].low) && (T[i].high == T[j].high)) {
+                removeTableEntry1(T, j, i);
+                T[j].low = -1;
+                T[j].high = -1;
+            }
         }
     }
     return;
@@ -1064,6 +1094,8 @@ int sift(t_blif_cubical_function *f)
             }
 
         }
+        printf("%sOptimal position for variable %d is %d %s\n", BBLU, i, optPos, KEND);
+        printVarOrder(varOrder, numInputs);
 
         // update copyT to the best solution seen
         //printTTable(T, f);
