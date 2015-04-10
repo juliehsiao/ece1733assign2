@@ -880,8 +880,17 @@ int getRootNode (TRow *T, int* varOrder) {
 }
 
 
+int getPos(int *array, int val, int size) {
+    int i;
+    for (i = 0; i < size; i++) {
+        if (array[i] > val) break;
+    }
+    printf("\tgetPos of %d -> %d\n", val, i);
+    return i;
+}
+
 // cleanup the T Table
-void cleanUpTable(TRow *T) {
+void cleanUpTable() {
     int i;
     TRow *newT = (TRow*) malloc (INIT_SIZE * sizeof(TRow));
     // initialize value for the terminal nodes
@@ -892,19 +901,29 @@ void cleanUpTable(TRow *T) {
     newT[1].low = -1;
     newT[1].high = -1;
     int newNumTRows = 2;
+    int numInvalidRows = numTRows - numValidRows(T);
+    printf("\tThere are %d invalid rows\n", numInvalidRows);
 
-    int *invalidRows = (int *) malloc ((numTRows - numValidRows(T)) * sizeof(int));
+    int *invalidRows = (int *) malloc (numInvalidRows * sizeof(int));
 
     int numInvalid = 0;
     for (i = 2; i < numTRows; i++) {
-        if (T[i].low < 0 || T[i].low >= numTRows || T[i].high < 0 || T[i].high >= numTRows) {
+        //if (T[i].low < 0 || T[i].low >= numTRows || T[i].high < 0 || T[i].high >= numTRows) {
+        if (T[i].low == -1 || T[i].high == -1) {
             invalidRows[numInvalid++] = i; // invalid entry
+            printf("\t\tINVALID [%d] = %d\n", numInvalid, i);
         } else {
+            printf("\t\tl %d\n", getPos(invalidRows, T[i].low, numInvalid));
             newT[newNumTRows].var = T[i].var;
-            newT[newNumTRows].var = T[i].low;
+            newT[newNumTRows].low = T[i].low - getPos(invalidRows, T[i].low, numInvalid);
+            printf("\t\th %d\n", getPos(invalidRows, T[i].high, numInvalid));
+            newT[newNumTRows].high = T[i].high - getPos(invalidRows, T[i].high, numInvalid);
             newNumTRows++;
         }
     }
+    T = newT;
+    numTRows = newNumTRows;
+    return;
 }
 
 
@@ -951,7 +970,7 @@ int sift(t_blif_cubical_function *f)
         int count = 0;
         int minNumTRows = numValidRows(T);
         printf("%sORIGINAL numTRows = %d %s\n", BWHT, minNumTRows, KEND);
-        int optPos = i;
+        int optPos = varIidx;
         for (varJidx = varIidx + 1; varJidx < numInputs; varJidx++) { // swap downward
             int tmpTRows = swap(f, varOrder[varIidx], varOrder[varJidx], localT, T);
             count++;
@@ -1023,7 +1042,10 @@ int sift(t_blif_cubical_function *f)
     // [5] Copy the local T table back into the T table
     //=====================================================
     //TODO TODO TODO TODO TODO Need to clean up the T table => remove the -1 rows 
-    //cleanUpTable(T);
+    cleanUpTable();
+    printf("%s", BWHT);
+    printTTable(T, f);
+    printf("%s", KEND);
 
     return getRootNode(T, varOrder);
 }
@@ -1193,8 +1215,13 @@ int main(int argc, char* argv[])
             //=====================================================
             // [4] output to dot file
             //=====================================================
-            printDOTfromNode(circuit->primary_inputs, outRoot[index], 
+            if (doSift) {
+                printDOTfromNode(circuit->primary_inputs, rNodeIdx, 
                     circuit->primary_outputs[index]->data.name);
+            } else {
+                printDOTfromNode(circuit->primary_inputs, outRoot[index], 
+                    circuit->primary_outputs[index]->data.name);
+            }
             if(function->cube_count == 0)
                printf("%sWarning: No cubes in function! Skipping...\n%s", BYEL, KEND); 
 		}
