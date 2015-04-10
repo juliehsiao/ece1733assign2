@@ -1023,6 +1023,8 @@ int sift(t_blif_cubical_function *f, t_blif_logic_circuit *circuit, int index)
                 optPos = varIidx;
             }
             if (debug) printDOTfromNode(circuit->primary_inputs, getRootNode(T, varOrder), circuit->primary_outputs[index]->data.name, ++version);
+            if (debug) printf("Version %d - ", version);
+            if (debug) printVarOrder(varOrder, numInputs);
         }
 
         // Restore original T table
@@ -1047,6 +1049,8 @@ int sift(t_blif_cubical_function *f, t_blif_logic_circuit *circuit, int index)
                     optPos = varIidx;
                 }
                 if (debug) printDOTfromNode(circuit->primary_inputs, getRootNode(T, varOrder), circuit->primary_outputs[index]->data.name, ++version);
+                if (debug) printf("Version %d - ", version);
+                if (debug) printVarOrder(varOrder, numInputs);
             }
         }
 
@@ -1116,6 +1120,9 @@ int sift(t_blif_cubical_function *f, t_blif_logic_circuit *circuit, int index)
 
     free(copyT);
     free(copyVarOrder);
+    
+    printf("%sOptimal variable ordering%s\n", BWHT, KEND);
+    printVarOrder(varOrder, numInputs);
 
     return getRootNode(T, varOrder);
 }
