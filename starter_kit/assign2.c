@@ -780,7 +780,7 @@ void resetSwapped(TRow *T) {
 // Swap the variables inputs[var1] and inputs[var2] order in the T table
 // TODO need to handle when an entry for var1 DNE in T table
 // TODO handle switching the references to var1 in previous entries
-int swap (t_blif_cubical_function *f, int var1, int var2, TRow *T) {
+int swap(t_blif_cubical_function *f, int var1, int var2, TRow *T) {
     resetSwapped(T);
     //printf("%sSWAP%s: %d <=> %d\n", BRED, KEND, var1, var2);
 
@@ -970,71 +970,84 @@ int sift(t_blif_cubical_function *f)
         //=====================================================
         int count = 0;
         int minNumTRows = numValidRows(T);
-        //printf("%sORIGINAL numTRows = %d %s\n", BWHT, minNumTRows, KEND);
+        printf("%s\tORIGINAL numTRows = %d %s\n", BWHT, minNumTRows, KEND);
         int optPos = varIidx;
         for (varJidx = varIidx + 1; varJidx < numInputs; varJidx++) { // swap downward
+            printf(">>\n");
             int tmpTRows = swap(f, varOrder[varIidx], varOrder[varJidx], T);
             count++;
             // update varOrder array
             int tmp = varOrder[varIidx];
             varOrder[varIidx] = varOrder[varJidx];
             varOrder[varJidx] = tmp;
-            //printVarOrder(varOrder, numInputs);
+            printVarOrder(varOrder, numInputs);
             varIidx++;
-            //printf("%sNumber of rows in table after swap = %d/%d [%d] %s\n", BWHT, tmpTRows, minNumTRows, varIidx, KEND);
+            printf("%sNumber of rows in table after swap = %d/%d [%d] %s\n", BWHT, tmpTRows, minNumTRows, varIidx, KEND);
             if (tmpTRows < minNumTRows) {
                 minNumTRows = tmpTRows;
                 optPos = varIidx;
             }
+            cleanUpTable();
+            printTTable(T, f);
         }
 
         if (reverse) {
             for (varJidx-=2; varJidx >= 0; varJidx--) { // swap upward back to beginning
+                printf("<<\n");
                 int tmpTRows = swap(f, varOrder[varJidx], varOrder[varIidx], T);
                 // update varOrder array
                 int tmp = varOrder[varIidx];
                 varOrder[varIidx] = varOrder[varJidx];
                 varOrder[varJidx] = tmp;
-                //printVarOrder(varOrder, numInputs);
+                printVarOrder(varOrder, numInputs);
                 varIidx--;
-                //printf("%sNumber of rows in table after reverse swap = %d/%d [%d] %s\n", BWHT, tmpTRows, minNumTRows, varIidx, KEND);
+                printf("%sNumber of rows in table after reverse swap = %d/%d [%d] %s\n", BWHT, tmpTRows, minNumTRows, varIidx, KEND);
                 if (tmpTRows < minNumTRows) {
                     minNumTRows = tmpTRows;
                     optPos = varIidx;
                 }
+                cleanUpTable();
+                printTTable(T, f);
             }
 
             //=====================================================
             // [4] Move variable i to optimal position
             //=====================================================
-            //printf("%sOPTIMAL POSITION for variable %d = %d %s\n", BWHT, i, optPos, KEND);
+            printf("%s\tOPTIMAL POSITION for variable %d = %d %s\n", BWHT, i, optPos, KEND);
             for (varJidx = varIidx + 1; varJidx <= optPos; varJidx++) { // Start with var i at pos 0
+                printf(">>\n");
                 swap(f, varOrder[varIidx], varOrder[varJidx], T);
                 // update varOrder array
                 int tmp = varOrder[varIidx];
                 varOrder[varIidx] = varOrder[varJidx];
                 varOrder[varJidx] = tmp;
-                //printVarOrder(varOrder, numInputs);
+                printVarOrder(varOrder, numInputs);
                 varIidx++;
+                cleanUpTable();
+                printTTable(T, f);
             }
         } else {
             //=====================================================
             // [4] Move variable i to optimal position
             //=====================================================
-            //printf("%s OPTIMAL POSITION for variable %d = %d %s\n", BWHT, i, optPos, KEND);
+            printf("%s\t-OPTIMAL POSITION for variable %d = %d %s\n", BWHT, i, optPos, KEND);
             for (varJidx-=2; varJidx >= optPos; varJidx--) { // Start with var i at pos end
+                printf("<<\n");
                 swap(f, varOrder[varJidx], varOrder[varIidx], T);
                 // update varOrder array
                 int tmp = varOrder[varIidx];
                 varOrder[varIidx] = varOrder[varJidx];
                 varOrder[varJidx] = tmp;
-                //printVarOrder(varOrder, numInputs);
+                printVarOrder(varOrder, numInputs);
                 varIidx--;
+                cleanUpTable();
+                printTTable(T, f);
             }
         }
 
-        //printf("Simplified Table after sifting variable %d has %d rows:\n", i, numValidRows(T));
-        //printTTable(T, f);
+        cleanUpTable();
+        printf("Simplified Table after sifting variable %d has %d rows:\n", i, numValidRows(T));
+        printTTable(T, f);
 
         //printVarOrder(varOrder, numInputs);
     }
