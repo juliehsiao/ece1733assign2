@@ -305,7 +305,11 @@ void initT()
     T = (TRow*) malloc(INIT_SIZE * sizeof(TRow));
     // initialize value for the terminal nodes
     T[0].var = totalNumInputs; // terminal node 0
+    T[0].low = -1;
+    T[0].high = -1;
     T[1].var = totalNumInputs; // terminal node 1
+    T[1].low = -1;
+    T[1].high = -1;
     numTRows = 2;
 }
 
@@ -348,6 +352,22 @@ void removeNode(int i, int l, int h)
 //    int u = lookup(i, l, h);
 // TODO
 }
+
+
+//---------------------------------------------------------------------
+// count the number of valid rows in T
+//---------------------------------------------------------------------
+int numValidRows(TRow *T)
+{
+    int i;
+    int res = 2;
+    for (i = 2; i < numTRows; i++) {
+        if (T[i].var >= 0 && T[i].var < numInputs && T[i].low >= 0 && T[i].low < numTRows
+            && T[i].high >= 0 && T[i].high < numTRows) res++;
+    }
+    return res;
+}
+
 
 //---------------------------------------------------------------------
 // remove a variable from the BDD
@@ -708,7 +728,7 @@ int translateOp(char* op)
 // Remove the idx-th entry from the T table
 void removeTableEntry (TRow *T, int idx, int newIdx) {
     int i;
-    for (i = 0; i < numTRows; i++) {
+    for (i = 2; i < numTRows; i++) {
         if (T[i].low == idx) {
             T[i].low = newIdx;
         }
@@ -723,9 +743,10 @@ void removeTableEntry (TRow *T, int idx, int newIdx) {
 // An entry can be simplified if both the low and high entries are the same
 void simplifyTable (TRow *T) {
     int i;
-    for (i = 0; i < numTRows; i++) {
-        if (T[i].low == T[i].high && T[i].low > 0) {
-            printf("Redundant entry: %d|%d|%d|%d|\n", i, T[i].var, T[i].low, T[i].high);
+    for (i = 2; i < numTRows; i++) {
+        if (T[i].low < 0 || T[i].low > numTRows || T[i].high < 0 || T[i].high > numTRows) continue;
+        if (T[i].low == T[i].high && T[i].low >= 0) {
+            //printf("Redundant entry: %d|%d|%d|%d|\n", i, T[i].var, T[i].low, T[i].high);
             removeTableEntry(T, i, T[i].low);
 
             // Set low and high entries to -1 to signify that it is invalid
@@ -759,55 +780,61 @@ void resetSwapped(TRow *T) {
 // Swap the variables inputs[var1] and inputs[var2] order in the T table
 // TODO need to handle when an entry for var1 DNE in T table
 // TODO handle switching the references to var1 in previous entries
-void swap (t_blif_cubical_function *f, int var1, int var2, TRow *localT, TRow *T) {
+int swap (t_blif_cubical_function *f, int var1, int var2, TRow *localT, TRow *T) {
     resetSwapped(T);
     printf("%sSWAP%s: %d <=> %d\n", BRED, KEND, var1, var2);
 
     int swapTmp = 0;
 
     int i;
-    int table[4];
+    int table[4] = {-1, -1, -1, -1};
     // Modify only the first encountered pair for now!
     for (i = 0; i < numTRows; i++) {
-        if (T[i].var == var1 && !T[i].swapped) {
-            printf("Examining entry>>> |%d\t|%d\t|%d\t|%d\t|\n", i, T[i].var, T[i].low, T[i].high);
+        if (T[i].var == var1 && !T[i].swapped && T[i].low >= 0 && T[i].low < numTRows && T[i].high >= 0 && T[i].high < numTRows) {
 
             // Here are the possibilities:
             // a) low points to an entry representing var2
             // b) low points to an entry representing a valid variable not var2
             // c) low points to an entry representing 0/1
             // that's all folks, assert otherwise
+
             if (T[i].low < numTRows && T[i].low >= 0) {
                 if (T[T[i].low].var == var2 && T[i].low > 1) { // a
                     table[0] = T[T[i].low].low;
                     table[1] = T[T[i].low].high;
-                } else { // b, c treated the same
+                } else {
                     table[0] = T[i].low;
                     table[1] = T[i].low;
-                    // Create new entry in the table because there are less than three nodes in this pattern
-                    T[i].low = MK(var1, table[0], table[2]);
+                }
+            }
+
+            if (T[i].high < numTRows && T[i].high >= 0) {
+                if (T[T[i].high].var == var2 && T[i].high > 1) { // a
+                    table[2] = T[T[i].high].low;
+                    table[3] = T[T[i].high].high;
+                } else {
+                    table[2] = T[i].high;
+                    table[3] = T[i].high;
+                }
+            }
+
+            //printf("Examining entry>>> |%d\t|%d\t|%d\t|%d\t|\n", i, T[i].var, T[i].low, T[i].high);
+            //printf("Table %d %d %d %d\n", table[0], table[1], table[2], table[3]);
+
+            if (T[i].low < numTRows && T[i].low >= 0) {
+                if (!(T[T[i].low].var == var2 && T[i].low > 1)) { // b, c
+                    T[i].low = add(var1, table[0], table[2]);
                     T[T[i].low].swapped = true;
                 }
             }
 
             if (T[i].high < numTRows && T[i].high >= 0) {
-                if (T[T[i].high].var == var2 && T[i].low > 1) { // a
-                    table[2] = T[T[i].high].low;
-                    table[3] = T[T[i].high].high;
-                } else { // b, c treated the same
-                    table[2] = T[i].high;
-                    table[3] = T[i].high;
-                    // Here need to create a new entry in the table because there are less than three nodes in this pattern
-                    // Create a new variable which represents var1, low points to table[1], high points to table[3]
-                    // Also modify the var2 high to point to this new entry
-                    T[i].high = MK(var1, table[1], table[3]);
+                if (!(T[T[i].high].var == var2 && T[i].low > 1)) { // b, c
+                    T[i].high = add(var1, table[1], table[3]);
                     T[T[i].high].swapped = true;
-
                 }
             }
 
-            printf("%sTable%s\t%d\t%d\t%d\t%d\n", KCYN, KEND, table[0], table[1], table[2], table[3]);
-            printTTable(T, f);
             // Swap the orders
             T[i].var = var2;
             T[i].swapped = true;
@@ -815,56 +842,28 @@ void swap (t_blif_cubical_function *f, int var1, int var2, TRow *localT, TRow *T
 		        T[T[i].low].var = var1;
 		        T[T[i].low].high = table[2];
 		        T[T[i].low].swapped = true;
-		        //printf("mod - T[%d].high <= %d\n", T[i].low, table[2]);
 		    }
 		
 		    if (T[i].high < numTRows && T[i].high > 1 && T[T[i].high].var == var2) {
 		        T[T[i].high].var = var1;
 		        T[T[i].high].low = table[1];
 		        T[T[i].high].swapped = true;
-		        //printf("mod - T[%d].low <= %d\n", T[i].high, table[1]);
 		    }
-            simplifyTable(T);
-            printf("%sSimplified Table after swap:%s\n", BRED, KEND);
 
-            // TODO BOOKMARK start coding here:
-            // The issue is that somehow the update is not correct and we have entries looping back onto itself
-            // To find the error reconsider this whole control loop...
-            // Where are the updates supposed to happen, is the simplification function correct?
+            simplifyTable(T);
+            //printf("%sSimplified Table after swap has %d rows:%s\n", BRED, numValidRows(T), KEND);
+            //printTTable(T, f);
         }
     }
 
-    printTTable(T, f);
-
-    //=====================================================
-    // [1] Set the table to reflect the variable swap
-    //     and remove redundant rows
-    //     x_i <=> x_j
-    //=====================================================
-
-    // Modify the table such that:
-    // 1) Entries before the cut line need to point to the correct entry
-
-    // 2) Entries i and j need to be modified to point to the correct entry
-
-    // 3) Entries after the cut line don't need to be modified
-
-
-    //=====================================================
-    // [2] Keep track of the optimal position for current
-    //     variable
-    //=====================================================
-
-    //=====================================================
-    // [3] Modify the local T table after finding optimal pos
-    //=====================================================
-
+    return numValidRows(T);
 }
 
 void printVarOrder (int *varOrder, int size) {
     int i;
+    printf("Variable Ordering ");
     for (i = 0; i < size; i++) {
-        printf("%d\t", varOrder[i]);
+        printf("%s%d%s\t", KBLU, varOrder[i], KEND);
     }
     printf("\n");
 }
@@ -898,20 +897,6 @@ int sift(t_blif_cubical_function *f)
     TRow *localT = (TRow*) malloc (INIT_SIZE * sizeof(TRow));
     int numlocalTRows = numTRows;
 
-/*
-    printf("=====================================\n");
-    printf("Original T Table:\n");
-    printf("|u\t|var\t|low\t|high\n");
-    printf("|0\t|\n");
-    printf("|1\t|\n");
-    for (i = 2; i < numTRows; i++) {
-        //localT[i].var = T[i].var;
-        //localT[i].low = T[i].low;
-        //localT[i].high = T[i].high;
-        printf("|%d\t|x%d\t|%d\t|%d\n", i, T[i].var, T[i].low, T[i].high);
-    }
-    printf("=====================================\n");
-*/
     printTTable(T, f);
 
     //=====================================================
@@ -923,12 +908,13 @@ int sift(t_blif_cubical_function *f)
         varOrder[i] = f->inputs[i]->data.index; // initial ordering
     }
 
-    printVarOrder(varOrder, numInputs);
+    //printVarOrder(varOrder, numInputs);
 
     int varIidx, varJidx;
     for (i = 0; i < numInputs; i++) {
         varIidx = findVarOrderIdx(varOrder, i, numInputs);
         bool reverse = (varIidx == 0) ? false : true; // Need to reverse to the beginning if did not start there
+        printf("%sORIGINAL numTRows = %d %s\n", BWHT, numTRows, KEND);
         // i is the variable number
 
         //=====================================================
@@ -936,46 +922,79 @@ int sift(t_blif_cubical_function *f)
         //     positions to find the position of minimum cost
         //=====================================================
         int count = 0;
+        int minNumTRows = numValidRows(T);
+        int optPos = 0;
         for (varJidx = varIidx + 1; varJidx < numInputs; varJidx++) { // swap downward
-            swap(f, varOrder[varIidx], varOrder[varJidx], localT, T);
+            int tmpTRows = swap(f, varOrder[varIidx], varOrder[varJidx], localT, T);
+            printf("%sNumber of rows in table after swap = %d %s\n", BWHT, tmpTRows, KEND);
             count++;
             // update varOrder array
             int tmp = varOrder[varIidx];
             varOrder[varIidx] = varOrder[varJidx];
             varOrder[varJidx] = tmp;
-            printVarOrder(varOrder, numInputs);
+            //printVarOrder(varOrder, numInputs);
             varIidx++;
-            //printTTable(T, f);
-            if (count == 2) return getRootNode(T, varOrder); // TODO Remove
+            if (tmpTRows < minNumTRows) {
+                minNumTRows = tmpTRows;
+                optPos = varIidx;
+            }
         }
-/*
+
         if (reverse) {
-            for (; varJidx >= 0; varJidx--) { // swap upward back to beginning
-                swap(varOrder[varIidx], varOrder[varJidx], localT, T);
+            for (varJidx-=2; varJidx >= 0; varJidx--) { // swap upward back to beginning
+                int tmpTRows = swap(f, varOrder[varJidx], varOrder[varIidx], localT, T);
+                printf("%sNumber of rows in table after reverse swap = %d %s\n", BWHT, tmpTRows, KEND);
                 // update varOrder array
                 int tmp = varOrder[varIidx];
                 varOrder[varIidx] = varOrder[varJidx];
                 varOrder[varJidx] = tmp;
-                printVarOrder(varOrder, numInputs);
+                //printVarOrder(varOrder, numInputs);
+                varIidx--;
+                if (tmpTRows < minNumTRows) {
+                    minNumTRows = tmpTRows;
+                    optPos = varIidx;
+                }
+            }
+
+            //=====================================================
+            // [4] Move variable i to optimal position
+            //=====================================================
+            printf("%sOPTIMAL POSITION for variable %d = %d %s\n", BWHT, i, optPos, KEND);
+            for (varJidx = varIidx + 1; varJidx <= optPos; varJidx++) { // Start with var i at pos 0
+                swap(f, varOrder[varIidx], varOrder[varJidx], localT, T);
+                // update varOrder array
+                int tmp = varOrder[varIidx];
+                varOrder[varIidx] = varOrder[varJidx];
+                varOrder[varJidx] = tmp;
+                //printVarOrder(varOrder, numInputs);
+                varIidx++;
+            }
+        } else {
+            //=====================================================
+            // [4] Move variable i to optimal position
+            //=====================================================
+            printf("%s OPTIMAL POSITION for variable %d = %d %s\n", BWHT, i, optPos, KEND);
+            for (varJidx-=2; varJidx > optPos; varJidx--) { // Start with var i at pos end
+                swap(f, varOrder[varJidx], varOrder[varIidx], localT, T);
+                // update varOrder array
+                int tmp = varOrder[varIidx];
+                varOrder[varIidx] = varOrder[varJidx];
+                varOrder[varJidx] = tmp;
+                //printVarOrder(varOrder, numInputs);
                 varIidx--;
             }
         }
-*/
-        //=====================================================
-        // [4] Move variable i to optimal position
-        //=====================================================
-        //for (j = 0; j < optPos; j++) { // Start with var i at pos 0
-        //    varI = findVar(varOrder, i, numInputs);
-        //    varJ = findVar(varOrder, j, numInputs);
-        //    swap(varI, varJ, localT, varOrder);
-        //}
 
+        printf("Simplified Table after sifting variable %d has %d rows:\n", i, numValidRows(T));
+        printTTable(T, f);
 
     }
 
     //=====================================================
     // [5] Copy the local T table back into the T table
     //=====================================================
+    //TODO TODO TODO TODO TODO Need to clean up the T table => remove the -1 rows 
+    //TODO TODO TODO TODO TODO test 18 doesn't work!!
 
     return getRootNode(T, varOrder);
 }
