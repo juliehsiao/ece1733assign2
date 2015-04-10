@@ -1056,7 +1056,7 @@ void applyPrompt(t_blif_logic_circuit *circuit, int bddNum)
         printf("Enter Apply cmd (i.e. \"f AND g\") or \"exit\":\n");
         printf("Apply >");
         fgets(applyCmd, 100, stdin);
-        printf("reveived: %s\n", applyCmd);
+        printf("received: %s\n", applyCmd);
     
         if(!strcmp("exit\n", applyCmd))
             break;
@@ -1083,8 +1083,12 @@ void applyPrompt(t_blif_logic_circuit *circuit, int bddNum)
             printf("op=%d, node1=%d, node2=%d\n", op, node1, node2);
         //do apply
         clearG();
+
         int applyRoot = APP(op, node1, node2);
+        clock_t time1 = clock();
         printf("applyRoot=%d\n", applyRoot);
+        clock_t time2 = clock();
+        printf("Time taken for apply = %f ms\n", (((float) time2 - (float) time1)/CLOCKS_PER_SEC) * 1000);
         char bddName[50];
         sprintf(bddName, "%s_%s_%s", node1Str, opStr, node2Str);
         printDOTfromNode(circuit->primary_inputs, applyRoot, bddName);
@@ -1196,9 +1200,14 @@ int main(int argc, char* argv[])
                 outRoot[index] = build(function->set_of_cubes, 
                         function->cube_count, 0, function->value);
 
-                printf("%sBefore sifting, there are %d rows in T%s\n", BWHT, numTRows, KEND);
-                if (doSift) tmp = sift(function);
-                printf("%sAfter sifting, there are %d rows in T%s\n", BWHT, numTRows, KEND);
+                if (doSift) {
+                    printf("%sBefore sifting, there are %d rows in T%s\n", BWHT, numTRows, KEND);
+                    clock_t time1 = clock();
+                    tmp = sift(function);
+                    clock_t time2 = clock();
+                    printf("%sAfter sifting, there are %d rows in T%s\n", BWHT, numTRows, KEND);
+                    printf("Time taken for sifting = %f ms\n", (((float)time2 - (float)time1)/CLOCKS_PER_SEC)*1000);
+                }
             }
 
             if (doSift) rNodeIdx = tmp;

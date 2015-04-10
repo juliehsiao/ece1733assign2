@@ -1,4 +1,4 @@
-
+#include <time.h>
 #include "cubical_function_representation.h"
 
 #define KEND  "\033[0m"
