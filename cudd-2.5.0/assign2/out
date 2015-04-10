@@ -1,0 +1,11 @@
+# Nanotrav Version #0.12, Release date 2003/12/31
+# ./nanotrav -p 1 -second node21_1.blif node21_2.blif
+# CUDD Version 2.5.0
+Order before final reordering
+c d 
+Number of inputs = 2
+Testing BDD minimization algorithms
+TEST-MINI: Constrain (f) 3 nodes
+TEST-MINI:: g
+T-M    : 3 nodes 1 leaves 12 minterms
+T-M L1 : 3 nodes 1 leaves 12 minterms
