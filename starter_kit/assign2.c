@@ -889,9 +889,7 @@ int getPos(int *array, int val, int size) {
 // cleanup the T Table
 void cleanUpTable() {
     int i;
-    printf("ppppp\n");
     TRow *newT = (TRow*) malloc (INIT_SIZE * sizeof(TRow));
-    printf("oooooo\n");
     // initialize value for the terminal nodes
     newT[0].var = totalNumInputs; // terminal node 0
     newT[0].low = -1;
@@ -903,7 +901,6 @@ void cleanUpTable() {
     int numInvalidRows = numTRows - numValidRows(T);
 
     int *invalidRows = (int *) malloc (numInvalidRows * sizeof(int));
-    printf("aaaaaa\n");
 
     int numInvalid = 0;
     for (i = 2; i < numTRows; i++) {
@@ -924,7 +921,6 @@ void cleanUpTable() {
 
     }
 
-    printf("000000\n");
     free(T);
     T = newT;
     numTRows = newNumTRows;
@@ -969,13 +965,11 @@ int sift(t_blif_cubical_function *f)
     int copyNumTRows;
     int varIidx, varJidx;
     for (i = 0; i < numInputs; i++) {
-        printf("111\n");
         copyNumTRows = numTRows;
         int minNumTRows = numValidRows(T);
         memcpy(copyVarOrder, varOrder, numInputs * sizeof(int));
-        printf("\ti=%d\n", i);
-        printVarOrder(varOrder, numInputs);
-        printVarOrder(copyVarOrder, numInputs);
+        //printVarOrder(varOrder, numInputs);
+        //printVarOrder(copyVarOrder, numInputs);
         varIidx = findVarOrderIdx(varOrder, i, numInputs);
         bool reverse = (varIidx == 0) ? false : true; // Need to reverse to the beginning if did not start there
         // i is the variable number
@@ -985,11 +979,10 @@ int sift(t_blif_cubical_function *f)
         //     positions to find the position of minimum cost
         //=====================================================
         int count = 0;
-        printf("%s\tORIGINAL numTRows = %d %s\n", BWHT, minNumTRows, KEND);
+        //printf("%s\tORIGINAL numTRows = %d %s\n", BWHT, minNumTRows, KEND);
         int optPos = varIidx;
         // Forward swap >>>>
         for (varJidx = varIidx + 1; varJidx < numInputs; varJidx++) {
-            printf(">>\n");
             int tmpTRows = swap(f, varOrder[varIidx], varOrder[varJidx], T);
             count++;
             // update varOrder array
@@ -998,7 +991,7 @@ int sift(t_blif_cubical_function *f)
             varOrder[varJidx] = tmp;
             //printVarOrder(varOrder, numInputs);
             varIidx++;
-            printf("%sNumber of rows in table after swap = %d/%d [%d] %s\n", BWHT, tmpTRows, minNumTRows, varIidx, KEND);
+            //printf("%sNumber of rows in table after swap = %d/%d [%d] %s\n", BWHT, tmpTRows, minNumTRows, varIidx, KEND);
             if (tmpTRows < minNumTRows) {
                 minNumTRows = tmpTRows;
                 optPos = varIidx;
@@ -1011,13 +1004,11 @@ int sift(t_blif_cubical_function *f)
         numTRows = copyNumTRows;
         memcpy(T, copyT, numTRows * sizeof(TRow));
         memcpy(varOrder, copyVarOrder, numInputs * sizeof(int));
-        printf("222\n");
         varIidx = findVarOrderIdx(varOrder, i, numInputs);
 
         // Backward swap <<<<
         if (reverse) {
             for (varJidx=varIidx - 1; varJidx >= 0; varJidx--) { // swap upward back to beginning
-                printf("<<\n");
                 int tmpTRows = swap(f, varOrder[varJidx], varOrder[varIidx], T);
                 // update varOrder array
                 int tmp = varOrder[varIidx];
@@ -1025,7 +1016,7 @@ int sift(t_blif_cubical_function *f)
                 varOrder[varJidx] = tmp;
                 //printVarOrder(varOrder, numInputs);
                 varIidx--;
-                printf("%sNumber of rows in table after reverse swap = %d/%d [%d] %s\n", BWHT, tmpTRows, minNumTRows, varIidx, KEND);
+                //printf("%sNumber of rows in table after reverse swap = %d/%d [%d] %s\n", BWHT, tmpTRows, minNumTRows, varIidx, KEND);
                 if (tmpTRows < minNumTRows) {
                     minNumTRows = tmpTRows;
                     optPos = varIidx;
@@ -1039,40 +1030,34 @@ int sift(t_blif_cubical_function *f)
         numTRows = copyNumTRows;
         memcpy(T, copyT, numTRows * sizeof(TRow));
         memcpy(varOrder, copyVarOrder, numInputs * sizeof(int));
-        printf("333\n");
         varIidx = findVarOrderIdx(varOrder, i, numInputs);
 
         //=====================================================
         // [4] Move variable i to optimal position
         //=====================================================
-        printf("444 %d\n", varIidx);
         if (optPos < findVarOrderIdx(varOrder, i, numInputs)) {
-            printf("%s\t-OPTIMAL POSITION for variable %d = %d %s\n", BWHT, i, optPos, KEND);
+            //printf("%s\t-OPTIMAL POSITION for variable %d = %d %s\n", BWHT, i, optPos, KEND);
             for (varJidx=varIidx-1; varJidx >= optPos; varJidx--) { // Start with var i at pos end
-                printf("<<\n");
                 swap(f, varOrder[varJidx], varOrder[varIidx], T);
                 // update varOrder array
                 int tmp = varOrder[varIidx];
                 varOrder[varIidx] = varOrder[varJidx];
                 varOrder[varJidx] = tmp;
-                printVarOrder(varOrder, numInputs);
+                //printVarOrder(varOrder, numInputs);
                 varIidx--;
                 //cleanUpTable();
                 //printTTable(T, f);
             }
         } else if (optPos > findVarOrderIdx(varOrder, i, numInputs)) {
-            printf("%s\tOPTIMAL POSITION for variable %d = %d %s\n", BWHT, i, optPos, KEND);
+            //printf("%s\tOPTIMAL POSITION for variable %d = %d %s\n", BWHT, i, optPos, KEND);
             for (varJidx=varIidx+1; varJidx <= optPos; varJidx++) { // Start with var i at pos end
-                printVarOrder(varOrder, numInputs);
-                printf("^ %d\n", varIidx);
-                printf(">>\n");
+                //printVarOrder(varOrder, numInputs);
                 swap(f, varOrder[varIidx], varOrder[varJidx], T);
                 // update varOrder array
-                printf("HAIII %d-%d\n", varOrder[varIidx], varOrder[varJidx]);
                 int tmp = varOrder[varIidx];
                 varOrder[varIidx] = varOrder[varJidx];
                 varOrder[varJidx] = tmp;
-                printVarOrder(varOrder, numInputs);
+                //printVarOrder(varOrder, numInputs);
                 varIidx++;
                 //cleanUpTable();
                 //printTTable(T, f);
@@ -1081,19 +1066,16 @@ int sift(t_blif_cubical_function *f)
         }
 
         // update copyT to the best solution seen
-        printf("\t\tTTTTTT\n");
-        printTTable(T, f);
-        printf("\t\tcopyTTTTTT\n");
-        printTTable(copyT, f);
+        //printTTable(T, f);
+        //printTTable(copyT, f);
         memcpy(copyT, T, numTRows * sizeof(TRow));
 
         //cleanUpTable();
-        printf("Simplified Table after sifting variable %d has %d rows:\n", i, numValidRows(T));
-        printTTable(T, f);
+        //printf("Simplified Table after sifting variable %d has %d rows:\n", i, numValidRows(T));
+        //printTTable(T, f);
 
         //printVarOrder(varOrder, numInputs);
     }
-    printf("DONE LOOP\n");
 
     //=====================================================
     // [5] Copy the local T table back into the T table
