@@ -907,13 +907,20 @@ void cleanUpTable() {
         //if (T[i].low < 0 || T[i].low >= numTRows || T[i].high < 0 || T[i].high >= numTRows) {
         if (T[i].low == -1 || T[i].high == -1) {
             invalidRows[numInvalid++] = i; // invalid entry
-        } else {
+        }
+    }
+
+    for (i = 2; i < numTRows; i++) {
+        if (T[i].low != -1 && T[i].high != -1) {
             newT[newNumTRows].var = T[i].var;
             newT[newNumTRows].low = T[i].low - getPos(invalidRows, T[i].low, numInvalid);
             newT[newNumTRows].high = T[i].high - getPos(invalidRows, T[i].high, numInvalid);
+            newT[newNumTRows].swapped = false;
             newNumTRows++;
         }
+
     }
+
     free(T);
     T = newT;
     numTRows = newNumTRows;
@@ -1035,6 +1042,7 @@ int sift(t_blif_cubical_function *f)
     //=====================================================
     // [5] Copy the local T table back into the T table
     //=====================================================
+    //printTTable(T, f);
     cleanUpTable();
     printf("%sFinal T Table post-sifting%s\n", BRED, KEND);
     printf("%s", BWHT);
